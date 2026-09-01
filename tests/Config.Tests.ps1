@@ -12,8 +12,8 @@ Describe 'Get-CctConfig' {
     It '首次调用：生成默认配置文件并返回默认值（决策 25）' {
         $cfg = Get-CctConfig -Path $script:cfgPath
         Test-Path $script:cfgPath | Should -BeTrue
-        $cfg.launchCommand | Should -Be 'claude --dangerously-skip-permissions -c'
-        $cfg.resumeCommand | Should -Be 'claude --dangerously-skip-permissions --resume {sessionId}'
+        $cfg.launchCommand | Should -Be 'claude -c'
+        $cfg.resumeCommand | Should -Be 'claude --resume {sessionId}'
         $cfg.excludePathPatterns | Should -Not -Contain 'ConfigBackup'
         $cfg.excludePathPatterns | Should -Contain 'AppData\Local\Temp'
         $cfg.maxVisibleRows | Should -Be 0
@@ -38,6 +38,6 @@ Describe 'Get-CctConfig' {
     It '损坏的 JSON：返回默认值不抛异常' {
         [System.IO.File]::WriteAllText($script:cfgPath, '{broken', [System.Text.UTF8Encoding]::new($false))
         $cfg = Get-CctConfig -Path $script:cfgPath
-        $cfg.launchCommand | Should -Be 'claude --dangerously-skip-permissions -c'
+        $cfg.launchCommand | Should -Be 'claude -c'
     }
 }

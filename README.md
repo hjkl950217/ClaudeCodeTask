@@ -5,23 +5,22 @@
 
 一条命令列出所有 Claude Code 任务文件夹，选中自动 `cd` 并启动 `claude`。
 
-## 演示
-
-```
-> cct                          # 弹出任务列表，空白输入 = 全部
-> cct 重构                     # 带初始过滤词
-↑↓ 选择 · Enter 确认 · Esc 退出
-文件夹项 → 接续最近会话（-c）
-手动命名的会话项 → 精确恢复（--resume）
-```
+> 主要测试平台：Windows（Windows 11 / PowerShell 7.6）。其他平台理论上可运行，但未系统验证。
 
 ## 功能
 
-- 全屏卡片网格选择器，↑↓ 导航、实时搜索过滤
+- 全屏卡片网格选择器，键盘导航、实时搜索过滤
 - 自动聚合同一任务目录的会话：手动命名项优先，AI 自动标题保底
 - 支持会话中途 `cd` 到子目录——列表按存储目录分组，恢复目标指向子目录
 - 退出 claude 后终端留在任务目录
-- 增量缓存：扫描加速 ~65-73%（热启动）
+- 增量缓存：热启动扫描加速 ~65-73%
+
+## 技术亮点
+
+- **内联 C# 编译**：性能关键路径用 `Add-Type` 内联 C# 代码，运行时自动编译（Roslyn），性能提升约 24 倍
+- **并行扫描**：C# `Parallel.For` 并发读盘，无共享状态，单文件异常不中断整体
+- **增量缓存**：文件数 ≥ 20 且缓存存在时，按 mtime+size 复用精确结果，热启动快 ~65-73%
+- **纯 .NET 目录判定**：`Directory.Exists` 替代 `Test-Path`，免 PowerShell 提供程序开销
 
 ## 安装
 
@@ -47,7 +46,7 @@ Add-Content -LiteralPath $PROFILE -Value "`nImport-Module `"$PWD\cct\cct.psm1`""
 ## 使用
 
 ```powershell
-cct                    # 弹出任务列表
+cct                    # 弹出任务列表，空白输入 = 全部
 cct <关键词>           # 带初始过滤词
 ```
 
@@ -55,19 +54,21 @@ cct <关键词>           # 带初始过滤词
 
 | 操作 | 效果 |
 |------|------|
-| ↑↓ / PgUp / PgDn | 上下移动、翻页 |
+| ↑ / ↓ | 向上 / 向下移动一行 |
+| ← / → | 向左 / 向右移动一列 |
 | Enter | 确认选择 |
 | Esc | 取消退出 |
 | 输入文字 | 实时过滤（中文需输入法提交后过滤） |
+| Backspace | 删除上一个过滤字符 |
 
 ## 配置
 
-首次运行自动生成 `~/.cct/config.json`：
+以下配置在首次运行时**自动生成**到 `~/.cct/config.json`，**无需手动创建**；需要自定义时再编辑该文件，改后重启终端生效：
 
 ```json
 {
-  "launchCommand":      "claude --dangerously-skip-permissions -c",
-  "resumeCommand":      "claude --dangerously-skip-permissions --resume {sessionId}",
+  "launchCommand":      "claude -c",
+  "resumeCommand":      "claude --resume {sessionId}",
   "excludePathPatterns":[".claude/worktrees/", "AppData\\Local\\Temp"],
   "maxVisibleRows":     0,
   "minUserMessages":    10
@@ -76,11 +77,13 @@ cct <关键词>           # 带初始过滤词
 
 | 字段 | 默认 | 说明 |
 |------|------|------|
-| `launchCommand` | `claude -c ` | 文件夹项启动命令 |
+| `launchCommand` | `claude -c` | 文件夹项启动命令 |
 | `resumeCommand` | `claude --resume {sessionId}` | 会话项恢复命令，`{sessionId}` 自动替换 |
 | `excludePathPatterns` | worktrees + Temp | 排除路径模式 |
 | `maxVisibleRows` | 0 (自适应) | 卡片网格最大行数 |
 | `minUserMessages` | 10 | 会话显示阈值（≥ 此条数才显示） |
+
+> **关于 `--dangerously-skip-permissions`**：默认启动命令**不带**该参数。它会跳过 Claude Code 的所有权限确认（工具调用、文件写入、命令执行等直接放行），有安全风险。除非你明确需要完全无人值守，否则不要添加。
 
 ## 数据来源
 
@@ -117,13 +120,6 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 ├── PROGRESS.md    # 开发决策日志
 └── README.md
 ```
-
-## 技术亮点
-
-- **内联 C# 编译**：性能关键路径用 `Add-Type` 内联 C# 代码，运行时自动编译（Roslyn），性能提升约 24 倍
-- **并行扫描**：C# `Parallel.For` 并发读盘，无共享状态，单文件异常不中断整体
-- **增量缓存**：文件数 ≥ 20 且缓存存在时，按 mtime+size 复用精确结果，热启动快 ~65-73%
-- **纯 .NET 目录判定**：`Directory.Exists` 替代 `Test-Path`，免 PowerShell 提供程序开销
 
 ## 许可
 

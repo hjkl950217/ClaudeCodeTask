@@ -19,8 +19,8 @@ BeforeAll {
     }
     [System.IO.File]::WriteAllLines("$script:projRoot\E---t---\s1.jsonl", $lines, [System.Text.UTF8Encoding]::new($false))
     $script:cfg = [pscustomobject]@{
-        launchCommand = 'claude --dangerously-skip-permissions -c'
-        resumeCommand = 'claude --dangerously-skip-permissions --resume {sessionId}'
+        launchCommand = 'claude -c'
+        resumeCommand = 'claude --resume {sessionId}'
     }
     $script:origLoc = Get-Location
 }
@@ -33,12 +33,12 @@ Describe 'Get-CctFallbackCommand（决策 23）' {
     It '会话项降级为 launchCommand（-c）' {
         $item = [pscustomobject]@{ Kind='Session'; Path='E:\x'; Name='x'; SessionId='abc' }
         $cmd = Get-CctFallbackCommand $item $script:cfg
-        $cmd | Should -Be 'claude --dangerously-skip-permissions -c'
+        $cmd | Should -Be 'claude -c'
     }
     It '文件夹项无需降级（返回 launchCommand 原样）' {
         $item = [pscustomobject]@{ Kind='Folder'; Path='E:\x'; Name='x'; SessionId=$null }
         $cmd = Get-CctFallbackCommand $item $script:cfg
-        $cmd | Should -Be 'claude --dangerously-skip-permissions -c'
+        $cmd | Should -Be 'claude -c'
     }
 }
 

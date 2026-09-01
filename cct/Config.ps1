@@ -4,8 +4,10 @@ function Get-CctConfig {
     param([string]$Path = (Join-Path $env:USERPROFILE '.cct\config.json'))
 
     $default = [pscustomobject]@{
-        launchCommand      = 'claude --dangerously-skip-permissions -c'
-        resumeCommand      = 'claude --dangerously-skip-permissions --resume {sessionId}'
+        # 默认不带 --dangerously-skip-permissions：跳过权限确认有安全风险。
+        # 如需无人值守自动接续，可在用户配置中自行添加该参数。
+        launchCommand      = 'claude -c'
+        resumeCommand      = 'claude --resume {sessionId}'
         # 排除模式（通用，不含机器特定路径）：worktree 是工具临时区；
         # Temp 是系统临时目录（探针/测试残留）。ConfigBackup 不默认排除——
         # 目录名每台机器不一样且里面可能有真实任务（用户决策 2026-08-31）
