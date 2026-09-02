@@ -30,6 +30,9 @@ jobs:
 
       - name: 运行测试
         run: |
+          # GitHub Actions 的 pwsh 模板默认 $ErrorActionPreference='stop'，与本机开发环境(Continue)不一致，
+          # 会让依赖 Write-Error 不终止的既有测试失败，显式恢复为 Continue
+          $ErrorActionPreference = 'Continue'
           # RealData.Tests.ps1 依赖本机真实会话数据，CI 无法复现，用显式文件列表排除
           $tests = @(Get-ChildItem -Path 'tests' -Filter '*.Tests.ps1' -File | Where-Object { $_.Name -ne 'RealData.Tests.ps1' })
           $result = Invoke-Pester -Path $tests.FullName -Output Detailed -PassThru
