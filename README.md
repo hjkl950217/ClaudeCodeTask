@@ -1,7 +1,12 @@
 # cct — Claude Code Task Selector
 
-[![PowerShell 7.6+](https://img.shields.io/badge/PowerShell-7.6%2B-blue)](https://github.com/PowerShell/PowerShell)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://github.com/hjkl950217/ClaudeCodeTask)
+[![PowerShell 7.6+](https://img.shields.io/badge/PowerShell-7.6%2B-5391FE?logo=powershell&logoColor=white)](https://github.com/PowerShell/PowerShell)
+[![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Pester 6](https://img.shields.io/badge/tested%20with-Pester%206-brightgreen)](https://pester.dev)
+[![GitHub stars](https://img.shields.io/github/stars/hjkl950217/ClaudeCodeTask?style=social)](https://github.com/hjkl950217/ClaudeCodeTask)
+[![GitHub top language](https://img.shields.io/github/languages/top/hjkl950217/ClaudeCodeTask)](https://github.com/hjkl950217/ClaudeCodeTask)
 
 一条命令列出所有 Claude Code 任务文件夹，选中自动 `cd` 并启动 `claude`。
 
