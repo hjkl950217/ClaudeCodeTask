@@ -1,6 +1,6 @@
 @{
     RootModule           = 'ClaudeCodeTask.UI.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '0.1.1'
     CompatiblePSEditions = @('Core')
     GUID                 = '185bb7d7-e410-451b-8300-db7dfcb1a244'
     Author               = '长空X'

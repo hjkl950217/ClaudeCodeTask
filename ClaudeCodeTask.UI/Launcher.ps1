@@ -8,6 +8,13 @@
 #   子进程继承控制台（TTY 保持），ExitCode 是 Int32 本尊，绝无污染可能。
 # 最终形态：Start-Process 直启 + -RedirectStandardError 分流（stderr 不与 TUI 输出竞争时序）
 
+# ── 诊断探针开关（硬编码常量，代码评审约束：探针必须有关闭路径）──────────
+# $script:CctProbeEnabled = $false 为出厂值，正式启动零探针 IO。
+# 排查 claude「接管/渲染时序」时改为 $true（下次启动生效），把启动轮询时间线写成
+# %TEMP%\cct_probe_*.csv（elapsed_ms,mode_hex,cursor_y,cursor_x,title）；
+# 亦可作未来非交互版调试子命令的数据源。仅真实终端下有意义，重定向环境无 TTY 不写。
+$script:CctProbeEnabled = $false
+
 # 运行一条 claude 命令：旋转 spinner + stderr 分流；返回退出码（Int32 本尊，绝不被输出污染）
 function Invoke-CctClaude {
     param([string]$Command, [string]$SpinnerText)
@@ -20,15 +27,55 @@ function Invoke-CctClaude {
     $errFile = Join-Path ([System.IO.Path]::GetTempPath()) ("cct_err_" + [guid]::NewGuid().ToString('N') + '.txt')
 
     try {
-        # 旋转 spinner（反馈 3-1：恢复 |/-\ 动画）。决策 55 的「后台线程与 claude 输出并发写屏撕裂」
-        # 根因已被第四轮 Start-Process 保 TTY 根治消除——claude 打开真实 TUI 接管屏幕后 spinner
-        # 自然被覆盖，残留风险仅在 TUI 接管前 1-2s（claude 冷启动期）。autoStop 6s 兜底：
-        # 长时间交互式会话期间后台线程不持续写屏。测试/重定向环境不启动 spinner（Invoke-WithSpinner 直跑）。
-        # -NoNewWindow：继承当前控制台（TTY 保持，claude 开 TUI 而非 headless）
-        # stdout 不重定向：交互式 TUI 直接渲染；stderr 分流到文件，结束后统一回放
-        $code = Invoke-WithSpinner -Text $SpinnerText -AutoStopMs 6000 -ScriptBlock {
+        # spinner 停止策略（决策 88，第十五轮定稿）：以「光标离开 spinner 所在行」为接管信号。
+        #   claude 接管时（渲染 TUI 那一刻）会把共享屏幕的光标移走——conpty 下共享光标可见。
+        #   实测（2026-09-02 探针）claude 1.18s 就切 raw 但到 9.87s 才开始渲染，raw 超前 8.5s
+        #   被证过早弃用；光标离开与渲染几乎同步，spinner 恰好贴住「屏幕交给 claude」的瞬间熄灭。
+        #   固定 autoStopMs 25s 仅作异常安全网；循环同限 25s 防信号失效时空转。
+        #   重定向/测试环境无 TTY 可检，保持 Start-Process -Wait 直跑不变。
+        if (-not [Console]::IsOutputRedirected) {
+            $spinner = $null
+            $yBase = $null
+            $probe = $null
+            $h = $null
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            try {
+                $spinner = [CctSpinner]::Start($SpinnerText, 100, 25000)
+                $yBase = [Console]::CursorTop                      # spinner 每帧归位的行号
+                if ($script:CctProbeEnabled) {                    # 探针（开关见文件头）
+                    $h = [CctConsoleMode]::GetStdHandle([CctConsoleMode]::STD_INPUT)
+                    $probe = Join-Path ([System.IO.Path]::GetTempPath()) ("cct_probe_" + [guid]::NewGuid().ToString('N') + '.csv')
+                    Set-Content -Path $probe -Value 'elapsed_ms,mode_hex,cursor_y,cursor_x,title' -Encoding UTF8 -NoNewline
+                }
+            } catch { }
+
+            try {
+                $p = Start-Process -FilePath $exe -ArgumentList $argLine -RedirectStandardError $errFile -NoNewWindow -PassThru
+                while (-not $p.HasExited -and $sw.ElapsedMilliseconds -lt 25000) {
+                    # 接管信号：claude 开始向共享屏幕渲染 → 光标离开我们 spinner 归位的行
+                    $cy = try { [Console]::CursorTop } catch { $null }
+                    if ($null -ne $cy -and $cy -ne $yBase) { break }
+
+                    if ($null -ne $probe) {
+                        try {
+                            $m = '?'
+                            $mm = [uint32]0
+                            if ($null -ne $h) { [CctConsoleMode]::GetConsoleMode($h, [ref]$mm) | Out-Null; $m = '{0:x}' -f $mm }
+                            $cx = [Console]::CursorLeft
+                            $t = [Console]::Title
+                        } catch { $cx = -1; $t = '' }
+                        Add-Content -Path $probe -Value "$($sw.ElapsedMilliseconds),$m,$cy,$cx,$t" -Encoding UTF8
+                    }
+                    Start-Sleep -Milliseconds 50
+                }
+            } finally {
+                if ($null -ne $spinner) { [CctSpinner]::Stop($spinner) }
+            }
+            $p.WaitForExit()
+            $code = [int]$p.ExitCode
+        } else {
             $p = Start-Process -FilePath $exe -ArgumentList $argLine -RedirectStandardError $errFile -NoNewWindow -Wait -PassThru
-            return [int]$p.ExitCode
+            $code = [int]$p.ExitCode
         }
     } catch {
         # Start-Process 失败（命令不存在等）：清理临时 errFile 后报错
