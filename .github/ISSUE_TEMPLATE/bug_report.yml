@@ -1,0 +1,70 @@
+name: 错误报告
+description: 报告 cct 的 bug，帮助我定位并修复问题
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间报告问题！请尽量填写完整信息，带 `*` 的为必填项。
+        提交前请先搜索已有 issue，避免重复。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么？*
+      description: 描述遇到的问题、期望的行为，以及完整的复现步骤
+      placeholder: |
+        复现步骤：
+        1. 运行 `cct <关键词>`
+        2. 按 ←/→ 移动选择，再按 Enter
+        3. 期望：... 实际：...
+    validations:
+      required: true
+  - type: textarea
+    id: error-log
+    attributes:
+      label: 错误信息 / 日志
+      description: 如果有报错或异常输出，粘贴到这里（会自动渲染为代码块）
+      render: shell
+  - type: input
+    id: pwsh-version
+    attributes:
+      label: PowerShell 版本 *
+      description: 运行 `$PSVersionTable.PSVersion.ToString()` 的输出
+      placeholder: "7.6.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 *
+      description: 运行 cct 的系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: 终端类型
+      description: 运行 cct 的终端（Windows Terminal、VS Code 集成终端等）
+      placeholder: "Windows Terminal"
+  - type: input
+    id: cct-version
+    attributes:
+      label: cct 版本 / 来源
+      description: Gallery 安装的版本号，或仓库克隆时的 commit；不确定可填「未知」
+      placeholder: "0.1.0"
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索过已有 issue，未找到相同问题
+          required: true
+        - label: 我已提供足够的复现信息
+          required: true

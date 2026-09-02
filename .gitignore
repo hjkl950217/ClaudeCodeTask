@@ -1,0 +1,40 @@
+# 用户配置（本地生成，不提交）
+~/.cct/config.json
+~/.cct/cache.json
+
+# 内部开发文档（仅本地，不推送 GitHub）
+PROGRESS.md
+docs/
+
+# 性能测试数据（含真实会话数据）
+_perf_test/
+
+# PowerShell
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+bin/
+obj/
+packages/
+
+# Test artifacts
+*.TestResults.xml
+test-results/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp files
+*.tmp
+*.temp
