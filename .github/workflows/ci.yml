@@ -25,10 +25,7 @@ jobs:
 
       - name: 运行测试
         run: |
-          $config = New-PesterConfiguration
-          $config.Run.Path = 'tests'
-          # RealData.Tests.ps1 依赖本机真实会话数据，CI 无法复现，排除
-          $config.Run.ExcludePath = @('tests/RealData.Tests.ps1')
-          $config.Output.Verbosity = 'Detailed'
-          $result = Invoke-Pester -Configuration $config -PassThru
+          # RealData.Tests.ps1 依赖本机真实会话数据，CI 无法复现，用显式文件列表排除
+          $tests = @(Get-ChildItem -Path 'tests' -Filter '*.Tests.ps1' -File | Where-Object { $_.Name -ne 'RealData.Tests.ps1' })
+          $result = Invoke-Pester -Path $tests.FullName -Output Detailed -PassThru
           if ($result.FailedCount -gt 0 -or $result.TotalCount -eq 0) { exit 1 }
