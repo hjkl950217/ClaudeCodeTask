@@ -5,7 +5,7 @@
 #   ESC 单字符 Key=None → Esc 退出失灵。cct 自身不设 VT_INPUT，但用户终端可能带着进
 #   （PSReadLine/其他 TUI 工具残留），必须防御性关闭。
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Selector.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Selector.ps1"
 
     Add-Type @'
 using System;

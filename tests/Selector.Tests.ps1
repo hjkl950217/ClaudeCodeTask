@@ -5,9 +5,9 @@
 # 固定栏：搜索行恒为帧首行、帮助行恒为窗口末行（余数行填帮助行上方，帧高恒 = WindowHeight，反馈 2）
 
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Display.ps1"
-    . "$PSScriptRoot\..\cct\Data.ps1"
-    . "$PSScriptRoot\..\cct\Selector.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Display.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Selector.ps1"
     $script:esc = [char]27
     $script:now = [datetime]'2026-08-27 12:00:00'
 

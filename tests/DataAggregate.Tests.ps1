@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
     $script:tmpRoot = Join-Path $env:TEMP ("cct_agg_" + [guid]::NewGuid().ToString('N'))
     # 模拟 projects 目录
     $script:proj = Join-Path $script:tmpRoot 'projects'

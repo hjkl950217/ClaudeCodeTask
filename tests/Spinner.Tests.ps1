@@ -3,7 +3,7 @@
 #   结果透传、异常透传（finally 正常走）、带参数 scriptblock。
 
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Spinner.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Spinner.ps1"
 }
 
 Describe 'Invoke-WithSpinner 契约（重定向下）' {

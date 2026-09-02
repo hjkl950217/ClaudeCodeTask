@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Display.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Display.ps1"
     $script:now = [datetime]'2026-08-27 12:00:00'
 }
 

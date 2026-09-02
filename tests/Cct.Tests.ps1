@@ -1,9 +1,9 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Config.ps1"
-    . "$PSScriptRoot\..\cct\Data.ps1"
-    . "$PSScriptRoot\..\cct\Spinner.ps1"
-    . "$PSScriptRoot\..\cct\Launcher.ps1"
-    . "$PSScriptRoot\..\cct\Cct.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Config.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Spinner.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Launcher.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Cct.ps1"
     $script:tmp = Join-Path $env:TEMP ("cct_main_" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:tmp | Out-Null
     $script:cfgPath = Join-Path $script:tmp 'config.json'
@@ -65,7 +65,7 @@ Describe 'Invoke-CctMain 启动失败回退（决策：没进 claude 就回原�
 
 Describe '模块导出' {
     It 'cct 函数已导出' {
-        Import-Module "$PSScriptRoot\..\cct\cct.psm1" -Force
+        Import-Module "$PSScriptRoot\..\ClaudeCodeTask\ClaudeCodeTask.psm1" -Force
         (Get-Command cct -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
     It '数据层端到端：假 projects 目录 → 文件夹项 + 1 个手动会话项' {

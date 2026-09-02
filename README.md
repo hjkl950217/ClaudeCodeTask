@@ -30,15 +30,25 @@
 - [Claude Code](https://claude.ai/code) 已安装
 - [Pester 6](https://pester.dev)（仅开发测试需要）
 
-### 安装
+### 方式一：从 PowerShell Gallery 安装（推荐）
 
 ```powershell
-# 下载到本地
+# 安装模块（命令为 cct）
+Install-Module -Name ClaudeCodeTask -Scope CurrentUser
+```
+
+- 安装后命令为 **`cct`**（模块名 `ClaudeCodeTask`、命令 `cct`），重开终端即可使用
+- 更新到最新版：`Update-Module -Name ClaudeCodeTask`
+- 卸载：`Uninstall-Module -Name ClaudeCodeTask`
+
+### 方式二：从代码仓库安装（体验源码 / 开发调试）
+
+```powershell
 git clone https://github.com/hjkl950217/ClaudeCodeTask.git
 cd ClaudeCodeTask
 
 # 将模块加载追加到 PowerShell profile
-Add-Content -LiteralPath $PROFILE -Value "`nImport-Module `"$PWD\cct\cct.psm1`""
+Add-Content -LiteralPath $PROFILE -Value "`nImport-Module `"$PWD\ClaudeCodeTask\ClaudeCodeTask.psm1`""
 ```
 
 重开终端即生效。改代码后重开终端加载新版。
@@ -103,16 +113,17 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 ### 项目结构
 
 ```
-├── cct/           # 模块
-│   ├── Data.ps1     数据层（含内联 C# 扫描器，并行 + 增量缓存）
-│   ├── Selector.ps1 界面层（全屏卡片网格）
-│   ├── Launcher.ps1 执行层（启动/恢复 claude）
-│   ├── Cct.ps1      主入口
-│   ├── Config.ps1   配置读写
-│   ├── Display.ps1  显示工具
-│   ├── Spinner.ps1  加载动画
-│   └── cct.psm1     模块声明
-├── tests/         # Pester 测试（13 文件）
+├── ClaudeCodeTask/   # 模块（模块名 = 包名 = ClaudeCodeTask，命令 = cct）
+│   ├── Data.ps1           数据层（含内联 C# 扫描器，并行 + 增量缓存）
+│   ├── Selector.ps1       界面层（全屏卡片网格）
+│   ├── Launcher.ps1       执行层（启动/恢复 claude）
+│   ├── Cct.ps1            主入口
+│   ├── Config.ps1         配置读写
+│   ├── Display.ps1        显示工具
+│   ├── Spinner.ps1        加载动画
+│   ├── ClaudeCodeTask.psd1  模块清单
+│   └── ClaudeCodeTask.psm1  模块声明（导出 cct 命令）
+├── tests/           # Pester 测试（13 文件）
 │   └── fixtures/     测试夹具
 ├── docs/          # 设计文档
 │   ├── specs/        规格说明

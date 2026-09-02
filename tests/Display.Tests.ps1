@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Display.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Display.ps1"
 }
 
 Describe 'Get-DisplayWidth' {

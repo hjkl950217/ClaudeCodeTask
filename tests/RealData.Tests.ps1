@@ -1,6 +1,6 @@
 # 本机真实数据回归测试（不可在别的机器复现，仅验证设计文档实测结论的实现一致性）
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
 }
 
 Describe '真实数据回归（spec 9）' {

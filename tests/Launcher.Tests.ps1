@@ -3,9 +3,9 @@
 # 注意：测试会改当前目录（Invoke-CctTask 真切目录），AfterAll 恢复
 
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Display.ps1"
-    . "$PSScriptRoot\..\cct\Spinner.ps1"
-    . "$PSScriptRoot\..\cct\Launcher.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Display.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Spinner.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Launcher.ps1"
 
     $script:tmp = Join-Path $env:TEMP ("cct_launch3_" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:tmp | Out-Null

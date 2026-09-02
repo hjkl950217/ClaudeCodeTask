@@ -1,6 +1,6 @@
 # 第十三轮：增量缓存测试——文件数 ≥ 拐点时的缓存复用/变更检测
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
     $script:CctCacheMinFiles = 2   # 覆盖拐点：2 个文件即触发缓存路径（真实拐点 20，测试用独立小树）
     $script:tmpRoot = Join-Path $env:TEMP ("cct_cache_" + [guid]::NewGuid().ToString('N'))
     $script:proj = Join-Path $script:tmpRoot 'projects'

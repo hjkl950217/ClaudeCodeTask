@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
     $script:tasks = @(
         [pscustomobject]@{ Kind='Folder'; Path='E:\个人\工具\管理_sub2api'; Name='管理_sub2api'; Subtitle='账号3244请求头覆写'; GroupKey='E:\个人\工具\管理_sub2api' }
         [pscustomobject]@{ Kind='Session'; Path='E:\个人\工具\管理_sub2api'; Name='账号调优'; GroupKey='E:\个人\工具\管理_sub2api' }

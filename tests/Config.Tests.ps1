@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Config.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Config.ps1"
     $script:tmp = Join-Path $env:TEMP ("cct_cfg_" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:tmp | Out-Null
     $script:cfgPath = Join-Path $script:tmp 'config.json'

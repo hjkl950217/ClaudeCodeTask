@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\cct\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask\Data.ps1"
     $script:tmp = Join-Path $env:TEMP ("cct_test_" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:tmp | Out-Null
 
