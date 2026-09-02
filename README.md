@@ -158,14 +158,33 @@ cct <关键词>           # 带初始过滤词
 
 ## 开发
 
+### 手动加载本地运行（临时终端，不改 profile）
+
 ```powershell
-# 跑全部测试（Pester 6）
+# 从仓库检出目录直接加载模块并启动选择器（无需安装）
+Import-Module "$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1" -Force
+cct
+
+# 改过 UI 代码后重新加载再试（-Force 强制重连）
+Import-Module "$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1" -Force
+cct
+```
+
+- `-Force` 覆盖已加载的旧版本模块，改代码后不必重开终端
+- UI 层为 PowerShell 源码，改动即时生效；**内核层（`ClaudeCodeTask.Core/*.cs`）是预编译 dll**，改 C# 后需先跑 `ClaudeCodeTask.Core\build.ps1` 重新编译（且因 `Add-Type` 类型缓存约束，换类体必须换类名，如 V2→V3→V4），再重新加载模块
+- 手动运行占用当前终端（全屏），退出后回到原 shell
+
+### 跑测试（Pester 6）
+
+```powershell
 pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pester -Path 'tests' -Output Minimal"
 
-# 测试覆盖
-# 13 个测试文件，139 个测试用例
-# 涵盖：数据提取、聚合、搜索、选择器渲染、配置、启动执行、缓存
+# 单文件测试（界面层最常改）
+pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pester -Path 'tests\Selector.Tests.ps1' -Output Detailed"
 ```
+
+- 测试覆盖：13 个测试文件，139 个测试用例
+- 涵盖：数据提取、聚合、搜索、选择器渲染、配置、启动执行、缓存
 
 ### 项目结构
 
