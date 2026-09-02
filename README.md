@@ -105,8 +105,8 @@ Install-Module -Name ClaudeCodeTask.UI -Scope CurrentUser
 从 [PowerShell Gallery 页面](https://www.powershellgallery.com/packages/ClaudeCodeTask.UI) 手动下载 `.nupkg` 文件，然后：
 
 ```powershell
-# 下载 ClaudeCodeTask.UI.0.1.0.nupkg 到当前目录后执行
-Install-Module -Name .\ClaudeCodeTask.UI.0.1.0.nupkg -SkipPublisherCheck -Force
+# 下载 ClaudeCodeTask.UI.0.1.1.nupkg 到当前目录后执行（版本号以 PSGallery 页面最新版为准）：
+Install-Module -Name .\ClaudeCodeTask.UI.0.1.1.nupkg -SkipPublisherCheck -Force
 ```
 
 安装后同样以 `cct` 命令使用。
@@ -122,8 +122,7 @@ cct <关键词>           # 带初始过滤词
 
 | 操作 | 效果 |
 |------|------|
-| ↑ / ↓ | 向上 / 向下移动一行 |
-| ← / → | 向左 / 向右移动一列 |
+| ↑↓←→ | 上下左右移动 |
 | Enter | 确认选择 |
 | Esc | 取消退出 |
 | 输入文字 | 实时过滤（中文需输入法提交后过滤） |
@@ -171,10 +170,13 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 ### 项目结构
 
 ```
+├── .github/           # GitHub 集成（CI 测试 + PSGallery 发布工作流 + issue 模板）
+│   └── workflows/     ci.yml（push/PR 跑 Pester）+ publish.yml（release 发布到 PSGallery）
 ├── ClaudeCodeTask.Core/ # C# 内核（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）
 │   ├── CctScannerV4.cs        并行读盘扫描 + 增量缓存支持
 │   ├── CctSpinner.cs          加载动画
 │   ├── CctConsoleMode.cs      控制台模式（TTY 保持）
+│   ├── build.ps1              内核编译脚本（产物 lib/ClaudeCodeTask.Core.dll）
 │   ├── ClaudeCodeTask.Core.csproj   net8.0（PowerShell 7.6 可直接加载）
 │   └── lib/ClaudeCodeTask.Core.dll   编译产物（随仓库提交）
 ├── ClaudeCodeTask.UI/ # UI 外壳（模块名 = 包名 = ClaudeCodeTask.UI，命令 = cct）
@@ -188,7 +190,9 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 │   ├── ClaudeCodeTask.UI.psd1  模块清单
 │   └── ClaudeCodeTask.UI.psm1  模块声明（导出 cct 命令）
 ├── tests/           # Pester 测试（13 文件）
-│   └── fixtures/     测试夹具
+│   └── fixtures/     测试夹具（fake-claude.ps1 等）
+├── 经验和文档/       # 长期保存的排查复盘、决策记录（随仓库推送）
+│   └── 性能调试/      性能探针复盘（claude 接管时序）
 └── README.md
 ```
 
