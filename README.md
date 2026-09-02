@@ -7,6 +7,8 @@
 [![Pester 6](https://img.shields.io/badge/tested%20with-Pester%206-brightgreen)](https://pester.dev)
 [![GitHub stars](https://img.shields.io/github/stars/hjkl950217/ClaudeCodeTask?style=social)](https://github.com/hjkl950217/ClaudeCodeTask)
 [![GitHub top language](https://img.shields.io/github/languages/top/hjkl950217/ClaudeCodeTask)](https://github.com/hjkl950217/ClaudeCodeTask)
+[![PSGallery](https://img.shields.io/powershellgallery/v/ClaudeCodeTask.UI?label=PSGallery&logo=powershell&logoColor=white)](https://www.powershellgallery.com/packages/ClaudeCodeTask.UI)
+[![Downloads](https://img.shields.io/powershellgallery/dt/ClaudeCodeTask.UI?label=Downloads)](https://www.powershellgallery.com/packages/ClaudeCodeTask.UI)
 
 一条命令列出所有 Claude Code 任务文件夹，选中自动 `cd` 并启动 `claude`。
 
