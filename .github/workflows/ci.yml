@@ -23,6 +23,11 @@ jobs:
           Install-Module Pester -MinimumVersion 6.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
           Import-Module Pester -MinimumVersion 6.0.0 -Force
 
+      - name: 设置时区为东八区（测试断言基于 UTC+8 本地时间）
+        run: |
+          Set-TimeZone -Id 'China Standard Time'
+          "当前时区: $([System.TimeZoneInfo]::Local.Id) 偏移=$([System.TimeZoneInfo]::Local.BaseUtcOffset)"
+
       - name: 运行测试
         run: |
           # RealData.Tests.ps1 依赖本机真实会话数据，CI 无法复现，用显式文件列表排除
