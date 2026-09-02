@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Pester 测试
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 信任 PSGallery 并安装 Pester 6
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 6.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 6.0.0 -Force
+
+      - name: 运行测试
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          # RealData.Tests.ps1 依赖本机真实会话数据，CI 无法复现，排除
+          $config.Run.ExcludePath = @('tests/RealData.Tests.ps1')
+          $config.Output.Verbosity = 'Detailed'
+          $result = Invoke-Pester -Configuration $config -PassThru
+          if ($result.FailedCount -gt 0 -or $result.TotalCount -eq 0) { exit 1 }

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 项目 Discussions
+    url: https://github.com/hjkl950217/ClaudeCodeTask/discussions
+    about: 提问、讨论使用经验与功能想法
+  - name: 项目主页
+    url: https://github.com/hjkl950217/ClaudeCodeTask
+    about: 查看项目文档、安装与使用说明
