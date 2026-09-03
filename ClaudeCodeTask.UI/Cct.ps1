@@ -49,7 +49,7 @@ function cct {
         'List'        { Invoke-CctList -Tokens @($inv.Tokens); return }
         'Help'        { foreach ($l in Get-CctHelpText) { Write-Host $l }; return }
         'CommandHelp' { foreach ($l in Get-CctHelpText -Command $inv.Command) { Write-Host $l }; return }
-        'Version'     { Write-Host (Get-CctVersion); return }
+        'Version'     { foreach ($l in Get-CctVersion) { Write-Host $l }; return }
         'Command'     { Invoke-CctCommand $inv.Name $inv.Tokens; return }
         'Error'       { Write-Error $inv.Message; return }
     }

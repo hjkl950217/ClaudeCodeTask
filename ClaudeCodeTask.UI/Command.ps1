@@ -223,11 +223,11 @@ function Invoke-CctUi {
     return Invoke-CctMain -Keyword $keyword -ConfigPath $ConfigPath -ProjectsRoot $Root
 }
 
-# 版本号：读模块 manifest 的 ModuleVersion
+# 版本号：读模块 manifest 的 ModuleVersion；第二行输出仓库地址（ProjectUri 在 PrivateData.PSData，单一来源）
 function Get-CctVersion {
     $psd1 = Join-Path $PSScriptRoot 'ClaudeCodeTask.UI.psd1'
     $mod = Import-PowerShellDataFile -Path $psd1
-    return "cct v$($mod.ModuleVersion)"
+    return @("cct v$($mod.ModuleVersion)", "Github地址: $($mod.PrivateData.PSData.ProjectUri)")
 }
 
 # 帮助文本（全部中文，含占位符内文字）：无参 = 全局帮助；-Command <名> = 子命令帮助。
