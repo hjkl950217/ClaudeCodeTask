@@ -15,4 +15,10 @@ New-Item -ItemType Directory -Force $lib | Out-Null
 $src = Join-Path $root 'bin\Release\net8.0\ClaudeCodeTask.Core.dll'
 Copy-Item $src (Join-Path $lib 'ClaudeCodeTask.Core.dll') -Force
 
+# 同步拷贝到 UI 模块 lib/：gallery 安装布局下 Add-Type 走 $PSScriptRoot\lib 内嵌加载
+$uiLib = Join-Path (Split-Path $root -Parent) 'ClaudeCodeTask.UI\lib'
+New-Item -ItemType Directory -Force $uiLib | Out-Null
+Copy-Item $src (Join-Path $uiLib 'ClaudeCodeTask.Core.dll') -Force
+
 Write-Host "OK -> $lib\ClaudeCodeTask.Core.dll"
+Write-Host "OK -> $uiLib\ClaudeCodeTask.Core.dll"

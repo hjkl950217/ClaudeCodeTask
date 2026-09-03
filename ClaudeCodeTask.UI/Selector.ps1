@@ -14,7 +14,7 @@ $script:CctEsc = [char]27
 #   ESC/ctrl+C 退出全失灵。用户终端可能带着该模式进来（PSReadLine/其他 TUI 工具残留），
 #   cct 进入时防御性关闭，退出时恢复原样。
 if (-not ('CctConsoleMode' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot '..\ClaudeCodeTask.Core\lib\ClaudeCodeTask.Core.dll')
+    Add-Type -Path (Join-Path $PSScriptRoot 'lib\ClaudeCodeTask.Core.dll')
 }
 
 # 清掉 mode 的 VT_INPUT 位（纯函数，可测）；stdin 非控制台（重定向）返回原值

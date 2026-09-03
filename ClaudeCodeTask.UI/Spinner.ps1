@@ -5,7 +5,7 @@
 
 # 后台 spinner 已独立到 ClaudeCodeTask.Core（预编译 dll）；Timer 后台线程回调需纯 .NET 代码
 if (-not ('CctSpinner' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot '..\ClaudeCodeTask.Core\lib\ClaudeCodeTask.Core.dll')
+    Add-Type -Path (Join-Path $PSScriptRoot 'lib\ClaudeCodeTask.Core.dll')
 }
 
 # PS 封装：控制台未重定向时启动 spinner，否则直接跑脚本（零输出）

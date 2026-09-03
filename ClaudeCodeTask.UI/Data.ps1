@@ -39,7 +39,7 @@ $script:CctTitleKindMap = @{ 'custom' = 'userCustom'; 'ai' = 'aiGenerate' }
 # C# 扫描器已独立到 ClaudeCodeTask.Core（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）。
 # 类名版本化约定保留：签名变更必须换名（V2→V3→V4），Add-Type 类型缓存仍在进程 AppDomain。
 if (-not ('CctScannerV4' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot '..\ClaudeCodeTask.Core\lib\ClaudeCodeTask.Core.dll')
+    Add-Type -Path (Join-Path $PSScriptRoot 'lib\ClaudeCodeTask.Core.dll')
 }
 
 function Get-JsonProp {
