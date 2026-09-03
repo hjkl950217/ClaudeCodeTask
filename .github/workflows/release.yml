@@ -61,7 +61,8 @@ jobs:
           PS_GALLERY_KEY: ${{ secrets.PS_GALLERY_KEY }}
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Publish-Module -Path 'ClaudeCodeTask.UI' -NuGetApiKey $env:PS_GALLERY_KEY
+          # 显式传清单文件：传目录时 PowerShell 要求 psd1 名 = 目录名（仍是 ClaudeCodeTask.UI），会识别失败
+          Publish-Module -Path 'ClaudeCodeTask.UI/ClaudeCodeTask.psd1' -NuGetApiKey $env:PS_GALLERY_KEY
 
   # 创建 GitHub Release：标题 = tag（v0.2.0）；正文 = release-notes/<tag>.md 文档内容；
   # Source code 源码包由 GitHub 对 tag 自动生成，无需上传附件。
