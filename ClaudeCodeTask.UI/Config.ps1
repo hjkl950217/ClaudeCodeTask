@@ -12,6 +12,9 @@ function Get-CctConfig {
         excludePathPatterns = @('.claude/worktrees/', 'AppData\Local\Temp')
         maxVisibleRows     = 0
         minUserMessages    = 10
+        # 查找/列出时是否包含「文件夹」条目：0 = 默认只显示有 sessionId 的会话（推荐）；
+        # 1 = 同时显示文件夹类型（目录本身作为可启动项）。扫描始终含文件夹，仅输出/查找层受此控制
+        includeFolderFind  = 0
     }
 
     if (-not (Test-Path -LiteralPath $Path)) {

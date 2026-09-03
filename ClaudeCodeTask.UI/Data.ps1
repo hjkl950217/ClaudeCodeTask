@@ -32,6 +32,10 @@
 # 文件数拐点：达到该值且缓存可用才走增量路径（测试可覆盖该 script 变量）
 $script:CctCacheMinFiles = 20
 
+# 标题类型枚举（读取层）：jsonl 标题事件原文 → 内部枚举。custom = 用户手动命名、
+# ai = AI 自动生成。分组比较逻辑用此枚举；展示层另有中文值（见 Get-CctTasks 输出项）
+$script:CctTitleKindMap = @{ 'custom' = 'userCustom'; 'ai' = 'aiGenerate' }
+
 # C# 扫描器已独立到 ClaudeCodeTask.Core（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）。
 # 类名版本化约定保留：签名变更必须换名（V2→V3→V4），Add-Type 类型缓存仍在进程 AppDomain。
 if (-not ('CctScannerV4' -as [type])) {
@@ -66,7 +70,7 @@ function New-CctSessionRecord {
         Cwd            = if ($Raw[1]) { $Raw[1] } else { $null }   # 末现 cwd = resume 目标
         LastTimestamp  = $lastTs
         Title          = if ($Raw[3]) { $Raw[3] } else { $null }
-        TitleType      = if ($Raw[4]) { $Raw[4] } else { $null }
+        TitleType      = if ($Raw[4] -and $script:CctTitleKindMap.ContainsKey([string]$Raw[4])) { $script:CctTitleKindMap[[string]$Raw[4]] } else { $null }
         UserMsgs       = $userMsgs
         HasRealUserMsg = ($userMsgs -ge 1)
     }
@@ -131,7 +135,10 @@ function Get-CctTasks {
         # Temp 排除开发探针残留会话（发现 9/22 调研产物）
         [string[]]$ExcludePatterns = @('AppData\Local\Temp'),
         # 第十三轮：扫描缓存路径（文件数 ≥ 拐点时用于增量复用；测试可注入独立路径）
-        [string]$CachePath = (Join-Path $env:USERPROFILE '.cct\cache.json')
+        [string]$CachePath = (Join-Path $env:USERPROFILE '.cct\cache.json'),
+        # 第十八轮：查找/列出时是否含「文件夹」条目。内部始终用 folder 做分组排序；仅返回前按此过滤。
+        # 默认 true（扫描器原始产物）；交互式/list/find/run 等输出链路按 config.includeFolderFind 传值。
+        [bool]$IncludeFolderFind = $true
     )
 
     # 1. 收集文件（排除 agent-/journal.jsonl/排除模式）
@@ -224,7 +231,7 @@ function Get-CctTasks {
         $latest = $byTime[0]
 
         # 会话项判定（spec 3.5）
-        $manualGroups = @($g.Group | Where-Object TitleType -eq 'custom' | Group-Object Title)
+        $manualGroups = @($g.Group | Where-Object TitleType -eq 'userCustom' | Group-Object Title)
         $sessionItems = [System.Collections.Generic.List[object]]::new()
         foreach ($mg in $manualGroups) {
             # 决策 34 修订（2026-08-27）：手动命名同样受 ≥MinUserMsgs 阈值约束——
@@ -237,20 +244,20 @@ function Get-CctTasks {
                 Subtitle = $null
                 LastActive = $target[0].LastTimestamp.ToLocalTime()
                 SessionId = $target[0].SessionId
-                GroupKey = $folderPath; TitleType = 'custom'   # GroupKey=StartCwd（挂到存储目录文件夹下）
+                GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=StartCwd（挂到存储目录文件夹下）
             })
         }
         if ($manualGroups.Count -eq 0) {
             # 保底自动项：目录无任何手动命名项（决策 36 原语义不变——手动项被阈值过滤不触发自动项顶替），
             # ≥MinUserMsgs 的 ai-title 里最新一个（决策 35/37；口径与决策 32 一致：≥）
-            $aiBig = @($g.Group | Where-Object { $_.TitleType -eq 'ai' -and $_.UserMsgs -ge $MinUserMsgs -and $_.HasRealUserMsg } | Sort-Object LastTimestamp -Descending)
+            $aiBig = @($g.Group | Where-Object { $_.TitleType -eq 'aiGenerate' -and $_.UserMsgs -ge $MinUserMsgs -and $_.HasRealUserMsg } | Sort-Object LastTimestamp -Descending)
             if ($aiBig.Count -gt 0) {
                 $sessionItems.Add([pscustomobject]@{
                     Kind = 'Session'; Path = $aiBig[0].Cwd; Name = $aiBig[0].Title   # Path=末现 cwd（resume 目标）
                     Subtitle = $null
                     LastActive = $aiBig[0].LastTimestamp.ToLocalTime()
                     SessionId = $aiBig[0].SessionId
-                    GroupKey = $folderPath; TitleType = 'ai'
+                    GroupKey = $folderPath; TitleType = '自动生成'
                 })
             }
         }
@@ -273,6 +280,10 @@ function Get-CctTasks {
         foreach ($s in ($items | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $f.GroupKey } | Sort-Object LastActive -Descending)) {
             $result.Add($s)
         }
+    }
+    # 第十八轮：includeFolderFind=0 时去掉 folder 行；session 顺序不变（仍按目录分组、组内按最近活动降序）
+    if (-not $IncludeFolderFind) {
+        return @($result | Where-Object { $_.Kind -eq 'Session' })
     }
     return $result
 }

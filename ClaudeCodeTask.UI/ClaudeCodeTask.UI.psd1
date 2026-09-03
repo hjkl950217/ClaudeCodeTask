@@ -1,6 +1,6 @@
 @{
     RootModule           = 'ClaudeCodeTask.UI.psm1'
-    ModuleVersion        = '0.1.1'
+    ModuleVersion        = '0.2.0'
     CompatiblePSEditions = @('Core')
     GUID                 = '185bb7d7-e410-451b-8300-db7dfcb1a244'
     Author               = '长空X'
@@ -17,7 +17,7 @@
             Tags         = @('ClaudeCode', 'claude', 'task-selector', 'TUI', 'PSEdition_Core', 'Windows')
             LicenseUri   = 'https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/hjkl950217/ClaudeCodeTask'
-            ReleaseNotes = '重构：C# 内核独立为 ClaudeCodeTask.Core（预编译 dll），UI 外壳更名 ClaudeCodeTask.UI。'
+            ReleaseNotes = '命令式子命令框架（list/find/run/ui）+ help/version + 全局选项分级帮助（-h/-v）+ run -i 会话 ID 直达；入口显式化（ui 显式交互、无 TTY 降级 list）；includeFolderFind 开关（默认 0 = 只输出含 sessionId 的会话，1 = 同时含文件夹条目）。'
         }
     }
 }

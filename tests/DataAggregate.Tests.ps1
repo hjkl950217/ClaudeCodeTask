@@ -105,7 +105,7 @@ Describe 'Get-CctTasks 聚合' {
         $sessions.Count | Should -Be 1
         $sessions[0].Name | Should -Be '整理用量接口'
         $sessions[0].SessionId | Should -Be 'c1'   # c2 是 0 条空壳，跳过（发现 22）
-        $sessions[0].TitleType | Should -Be 'ai'
+        $sessions[0].TitleType | Should -Be '自动生成'
     }
     It 'taskC 副标题 = c2 的标题（最近会话，尽管它是空壳但有标题）' {
         ($script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskC }).Subtitle | Should -Be '整理用量接口'

@@ -47,7 +47,7 @@ Describe 'Read-CctSessionFile 字段提取' {
         )
         $r = Read-CctSessionFile $p
         $r.Title | Should -Be '手动2'
-        $r.TitleType | Should -Be 'custom'
+        $r.TitleType | Should -Be 'userCustom'
     }
     It '只有 ai-title 时取 ai' {
         $p = New-TestJsonl 's-ai' @(
@@ -55,7 +55,7 @@ Describe 'Read-CctSessionFile 字段提取' {
         )
         $r = Read-CctSessionFile $p
         $r.Title | Should -Be 'git status概览'
-        $r.TitleType | Should -Be 'ai'
+        $r.TitleType | Should -Be 'aiGenerate'
     }
     It 'UserMsgs：字符串 content 计 1，tool_result / isMeta / slash command 不计' {
         $p = New-TestJsonl 's-msgs' @(
