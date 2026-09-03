@@ -52,7 +52,7 @@ Describe 'Invoke-CctMain 启动失败回退（决策：没进 claude 就回原�
 
 Describe '模块导出' {
     It 'cct 函数已导出' {
-        Import-Module "$PSScriptRoot\..\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1" -Force
+        Import-Module "$PSScriptRoot\..\ClaudeCodeTask.UI\ClaudeCodeTask.psm1" -Force
         (Get-Command cct -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
     It '数据层端到端：假 projects 目录 → 文件夹项 + 1 个手动会话项' {

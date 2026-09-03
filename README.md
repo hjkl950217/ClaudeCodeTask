@@ -7,8 +7,8 @@
 [![Pester 6](https://img.shields.io/badge/tested%20with-Pester%206-brightgreen)](https://pester.dev)
 [![GitHub stars](https://img.shields.io/github/stars/hjkl950217/ClaudeCodeTask?style=social)](https://github.com/hjkl950217/ClaudeCodeTask)
 [![GitHub top language](https://img.shields.io/github/languages/top/hjkl950217/ClaudeCodeTask)](https://github.com/hjkl950217/ClaudeCodeTask)
-[![PSGallery](https://img.shields.io/powershellgallery/v/ClaudeCodeTask.UI?label=PSGallery&logo=powershell&logoColor=white)](https://www.powershellgallery.com/packages/ClaudeCodeTask.UI)
-[![Downloads](https://img.shields.io/powershellgallery/dt/ClaudeCodeTask.UI?label=Downloads)](https://www.powershellgallery.com/packages/ClaudeCodeTask.UI)
+[![PSGallery](https://img.shields.io/powershellgallery/v/ClaudeCodeTask?label=PSGallery&logo=powershell&logoColor=white)](https://www.powershellgallery.com/packages/ClaudeCodeTask)
+[![Downloads](https://img.shields.io/powershellgallery/dt/ClaudeCodeTask?label=Downloads)](https://www.powershellgallery.com/packages/ClaudeCodeTask)
 
 一条命令列出所有 Claude Code 任务文件夹，选中自动 `cd` 并启动 `claude`。
 
@@ -46,29 +46,29 @@
 
 ```powershell
 # 安装模块（命令为 cct）
-Install-Module -Name ClaudeCodeTask.UI -Scope CurrentUser
+Install-Module -Name ClaudeCodeTask -Scope CurrentUser
 ```
 
-- 安装后命令为 **`cct`**（模块名 `ClaudeCodeTask.UI`、命令 `cct`），重开终端即可使用
+- 安装后命令为 **`cct`**（模块名 `ClaudeCodeTask`、命令 `cct`），重开终端即可使用
 - **无需手动导入**：PowerShell 会在你首次输入 `cct` 时自动从 `$env:PSModulePath` 找到并加载模块，不需要 `Import-Module`
 
 **更新模块**
 
 ```powershell
 # 更新到最新版
-Update-Module -Name ClaudeCodeTask.UI
+Update-Module -Name ClaudeCodeTask
 
 # 若上一命令因权限报错，显式指定用户级作用域重试
-Update-Module -Name ClaudeCodeTask.UI -Scope CurrentUser -Force
+Update-Module -Name ClaudeCodeTask -Scope CurrentUser -Force
 ```
 
-- 更新前先确认当前版本：`Get-Module -Name ClaudeCodeTask.UI -ListAvailable`
-- 若模块已在本会话加载，更新后需**重开终端**（或先 `Remove-Module ClaudeCodeTask.UI` 再重新输入 `cct`）才会生效
+- 更新前先确认当前版本：`Get-Module -Name ClaudeCodeTask -ListAvailable`
+- 若模块已在本会话加载，更新后需**重开终端**（或先 `Remove-Module ClaudeCodeTask` 再重新输入 `cct`）才会生效
 
 **卸载模块**
 
 ```powershell
-Uninstall-Module -Name ClaudeCodeTask.UI
+Uninstall-Module -Name ClaudeCodeTask
 ```
 
 ### 方式二：从代码仓库安装（体验源码 / 开发调试）
@@ -78,7 +78,7 @@ git clone https://github.com/hjkl950217/ClaudeCodeTask.git
 cd ClaudeCodeTask
 
 # 将模块加载追加到 PowerShell profile
-Add-Content -LiteralPath $PROFILE -Value "`nImport-Module `"$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1`""
+Add-Content -LiteralPath $PROFILE -Value "`nImport-Module `"$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.psm1`""
 ```
 
 重开终端即生效。改代码后重开终端加载新版。
@@ -99,18 +99,18 @@ $env:HTTP_PROXY  = 'http://127.0.0.1:7890'
 $env:HTTPS_PROXY = 'http://127.0.0.1:7890'
 
 # 或用系统「设置 → 网络和 Internet → 代理」开启代理后重开终端
-Install-Module -Name ClaudeCodeTask.UI -Scope CurrentUser
+Install-Module -Name ClaudeCodeTask -Scope CurrentUser
 ```
 
 > **有代理软件（Clash / v2rayN 等）的用户**：无需全局代理，直接在代理软件的「分流规则」里把 `powershellgallery.com` 加入走代理即可。这样只代理这一个域名，其余流量不受影响；地址 `api/v2` 与网页同域名，只加主域 `powershellgallery.com` 即覆盖安装请求。
 
 **2. 离线安装**（无代理时的兜底）
 
-从 [PowerShell Gallery 页面](https://www.powershellgallery.com/packages/ClaudeCodeTask.UI) 手动下载 `.nupkg` 文件，然后：
+从 [PowerShell Gallery 页面](https://www.powershellgallery.com/packages/ClaudeCodeTask) 手动下载 `.nupkg` 文件，然后：
 
 ```powershell
-# 下载 ClaudeCodeTask.UI.0.1.1.nupkg 到当前目录后执行（版本号以 PSGallery 页面最新版为准）：
-Install-Module -Name .\ClaudeCodeTask.UI.0.1.1.nupkg -SkipPublisherCheck -Force
+# 下载 ClaudeCodeTask.0.1.0.nupkg 到当前目录后执行（版本号以 PSGallery 页面最新版为准）：
+Install-Module -Name .\ClaudeCodeTask.0.1.0.nupkg -SkipPublisherCheck -Force
 ```
 
 安装后同样以 `cct` 命令使用。
@@ -166,11 +166,11 @@ cct <关键词>           # 带初始过滤词
 
 ```powershell
 # 从仓库检出目录直接加载模块并启动选择器（无需安装）
-Import-Module "$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1" -Force
+Import-Module "$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.psm1" -Force
 cct
 
 # 改过 UI 代码后重新加载再试（-Force 强制重连）
-Import-Module "$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1" -Force
+Import-Module "$PWD\ClaudeCodeTask.UI\ClaudeCodeTask.psm1" -Force
 cct
 ```
 
@@ -202,7 +202,7 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 │   ├── build.ps1              内核编译脚本（产物 lib/ClaudeCodeTask.Core.dll）
 │   ├── ClaudeCodeTask.Core.csproj   net8.0（PowerShell 7.6 可直接加载）
 │   └── lib/ClaudeCodeTask.Core.dll   编译产物（随仓库提交）
-├── ClaudeCodeTask.UI/ # UI 外壳（模块名 = 包名 = ClaudeCodeTask.UI，命令 = cct）
+├── ClaudeCodeTask.UI/ # UI 外壳（模块名 = 包名 = ClaudeCodeTask，命令 = cct）
 │   ├── Data.ps1           数据层（调用 Core dll，并行 + 增量缓存）
 │   ├── Selector.ps1       界面层（全屏卡片网格，行 diff 重绘）
 │   ├── Launcher.ps1       执行层（启动/恢复 claude）
@@ -210,8 +210,8 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 │   ├── Config.ps1         配置读写
 │   ├── Display.ps1        显示工具（中文/emoji 宽度按 East Asian Width 判定）
 │   ├── Spinner.ps1        加载动画
-│   ├── ClaudeCodeTask.UI.psd1  模块清单
-│   └── ClaudeCodeTask.UI.psm1  模块声明（导出 cct 命令）
+│   ├── ClaudeCodeTask.psd1  模块清单
+│   └── ClaudeCodeTask.psm1  模块声明（导出 cct 命令）
 ├── tests/           # Pester 测试（13 文件）
 │   └── fixtures/     测试夹具（fake-claude.ps1 等）
 ├── 经验和文档/       # 长期保存的排查复盘、决策记录（随仓库推送）

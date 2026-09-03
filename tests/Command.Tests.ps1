@@ -274,7 +274,7 @@ Describe 'Get-CctVersion（版本号）' {
         @(Get-CctVersion)[0] | Should -Match '^cct v\d+\.\d+\.\d+'
     }
     It '第二行输出 "Github地址: " 前缀 + 仓库地址（与 psd1 PrivateData.PSData.ProjectUri 一致）' {
-        $expected = (Import-PowerShellDataFile (Join-Path $PSScriptRoot '..\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psd1')).PrivateData.PSData.ProjectUri
+        $expected = (Import-PowerShellDataFile (Join-Path $PSScriptRoot '..\ClaudeCodeTask.UI\ClaudeCodeTask.psd1')).PrivateData.PSData.ProjectUri
         @(Get-CctVersion)[1] | Should -Be "Github地址: $expected"
         $expected | Should -Not -BeNullOrEmpty
     }

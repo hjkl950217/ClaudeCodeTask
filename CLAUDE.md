@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目定位
 
-cct — Claude Code 任务文件夹选择器。一条命令列出 `~/.claude/projects/` 里的任务文件夹/会话，选中自动 cd 并启动 claude。PowerShell 外壳（`ClaudeCodeTask.UI`）+ C# 内核（`ClaudeCodeTask.Core`，预编译 dll），Pester 6 单测覆盖。
+cct — Claude Code 任务文件夹选择器。一条命令列出 `~/.claude/projects/` 里的任务文件夹/会话，选中自动 cd 并启动 claude。PowerShell 外壳（模块名 `ClaudeCodeTask`，源码位于 `ClaudeCodeTask.UI/` 目录）+ C# 内核（`ClaudeCodeTask.Core`，预编译 dll），Pester 6 单测覆盖。
 
 ## 常用命令
 
@@ -16,11 +16,11 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pester -Path 'tests\Selector.Tests.ps1' -Output Detailed"
 
 # 重载模块并运行（TUI 手测；改代码后须重开终端或加 -Force）
-Import-Module "E:\个人\ClaudeCodeTask\ClaudeCodeTask.UI\ClaudeCodeTask.UI.psm1" -Force
+Import-Module "E:\个人\ClaudeCodeTask\ClaudeCodeTask.UI\ClaudeCodeTask.psm1" -Force
 cct
 ```
 
-## 架构（分层，ClaudeCodeTask.UI/ClaudeCodeTask.UI.psm1 按序 dot-source 加载）
+## 架构（分层，ClaudeCodeTask.UI/ClaudeCodeTask.psm1 按序 dot-source 加载）
 
 - `ClaudeCodeTask.Core/` 内核层：C# 预编译 dll（`CctScannerV4` 并行扫描器 + `CctSpinner` + `CctConsoleMode`），改内核跑其 `build.ps1` 重新编译，产物 `lib/ClaudeCodeTask.Core.dll`；ps1 用 `Add-Type -Path` 加载
 - `Display.ps1` 显示工具：`Get-DisplayWidth`（中文/emoji 宽度按 East Asian Width 手判区间，.NET 无内置）、Pad/Truncate、`Get-CctSessionLabel`（标题（目录名）去重省略括号）、`Get-RelativeTime`、`Get-TailPaths`（路径尾部默认 3 级，冲突逐级加深）
