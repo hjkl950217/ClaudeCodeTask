@@ -1,9 +1,10 @@
-# cct — Claude Code Task Selector
+# cct — Claude Code Task
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://github.com/hjkl950217/ClaudeCodeTask)
 [![PowerShell 7.6+](https://img.shields.io/badge/PowerShell-7.6%2B-5391FE?logo=powershell&logoColor=white)](https://github.com/PowerShell/PowerShell)
 [![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![C#](https://img.shields.io/badge/C%23-8.0-239120?logo=csharp&logoColor=white)](https://learn.microsoft.com/dotnet/csharp/)
 [![Pester 6](https://img.shields.io/badge/tested%20with-Pester%206-brightgreen)](https://pester.dev)
 [![GitHub stars](https://img.shields.io/github/stars/hjkl950217/ClaudeCodeTask?style=social)](https://github.com/hjkl950217/ClaudeCodeTask)
 [![GitHub top language](https://img.shields.io/github/languages/top/hjkl950217/ClaudeCodeTask)](https://github.com/hjkl950217/ClaudeCodeTask)
@@ -16,7 +17,9 @@
 
 ## 效果预览
 
-![cct 选择器界面](cct-selector.png)
+![交互式模式截图](image/interactive-mode.png)
+
+![命令式模式截图](image/command-mode.png)
 
 ## 功能
 
@@ -39,7 +42,7 @@
 ### 前置条件
 
 - [PowerShell 7.6+](https://github.com/PowerShell/PowerShell)
-- [Claude Code](https://claude.ai/code) 已安装
+- [Claude Code](https://claude.ai/code)
 - [Pester 6](https://pester.dev)（仅开发测试需要）
 
 ### 方式一：从 PowerShell Gallery 安装（推荐）
@@ -142,7 +145,8 @@ cct <关键词>           # 带初始过滤词
   "resumeCommand":      "claude --resume {sessionId}",
   "excludePathPatterns":[".claude/worktrees/", "AppData\\Local\\Temp"],
   "maxVisibleRows":     0,
-  "minUserMessages":    10
+  "minUserMessages":    10,
+  "includeFolderFind":  0
 }
 ```
 
@@ -153,6 +157,7 @@ cct <关键词>           # 带初始过滤词
 | `excludePathPatterns` | worktrees + Temp | 排除路径模式 |
 | `maxVisibleRows` | 0 (自适应) | 卡片网格最大行数 |
 | `minUserMessages` | 10 | 会话显示阈值（≥ 此条数才显示） |
+| `includeFolderFind` | 0 (仅会话) | 0 = 只列出会话（默认）；1 = 额外列出没有任何会话的目录（同目录已有会话时不重复列出） |
 
 > **关于 `--dangerously-skip-permissions`**：默认启动命令**不带**该参数。它会跳过 [Claude Code](https://claude.ai/code) 的所有权限确认（工具调用、文件写入、命令执行等直接放行），有安全风险。除非你明确需要完全无人值守，否则不要添加。
 
