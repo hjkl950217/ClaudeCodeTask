@@ -19,8 +19,8 @@ BeforeAll {
     }
     [System.IO.File]::WriteAllLines("$script:projRoot\E---t---\s1.jsonl", $lines, [System.Text.UTF8Encoding]::new($false))
     $script:cfg = [pscustomobject]@{
-        launchCommand = 'claude --dangerously-skip-permissions -c'
-        resumeCommand = 'claude --dangerously-skip-permissions --resume {sessionId}'
+        launchCommand = 'claude -c'
+        resumeCommand = 'claude --resume {sessionId}'
     }
     $script:origLoc = Get-Location
 }
