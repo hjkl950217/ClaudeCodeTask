@@ -1,6 +1,6 @@
 @{
     RootModule           = 'ClaudeCodeTask.psm1'
-    ModuleVersion        = '0.2.0'
+    ModuleVersion        = '0.2.1'
     CompatiblePSEditions = @('Core')
     GUID                 = '185bb7d7-e410-451b-8300-db7dfcb1a244'
     Author               = '长空X'
@@ -17,7 +17,7 @@
             Tags         = @('ClaudeCode', 'claude', 'task-selector', 'TUI', 'PSEdition_Core', 'Windows')
             LicenseUri   = 'https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/hjkl950217/ClaudeCodeTask'
-            ReleaseNotes = '命令式子命令框架（list/find/run/ui）+ help/version + 全局选项分级帮助（-h/-v）+ run -i 会话 ID 直达；入口显式化（ui 显式交互、无 TTY 降级 list）；includeFolderFind 开关（默认 0 = 只输出含 sessionId 的会话，1 = 同时含文件夹条目）。'
+            ReleaseNotes = '修复从 Gallery/zip 安装即用（内核 dll 内嵌模块包）；同名历史会话各自列出不再被隐藏（0.2.0 起仅留最新）；文件夹条目仅在没有可恢复会话的纯目录保留。'
         }
     }
 }
