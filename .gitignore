@@ -6,6 +6,9 @@
 PROGRESS.md
 docs/
 
+# 个人博客文章（仅本地，不推送 GitHub）
+博客-cct-精悍安利.md
+
 # 性能测试数据（含真实会话数据）
 _perf_test/
 
