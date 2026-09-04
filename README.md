@@ -219,6 +219,10 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 └── README.md
 ```
 
+## 友情链接
+
+- [LINUX DO](https://linux.do) —— 新的理想型技术社区
+
 ## 许可
 
 本项目以 [MIT](LICENSE) 许可发布。
