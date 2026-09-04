@@ -236,16 +236,19 @@ function Get-CctTasks {
         foreach ($mg in $manualGroups) {
             # 决策 34 修订（2026-08-27）：手动命名同样受 ≥MinUserMsgs 阈值约束——
             # <10 条的会话哪怕手动命名意义也不大。组内全部 <阈值 → 整组不保留。
-            # resume 目标：≥阈值的文件里最新的（跳过 /clear 空壳与碎片文件）
-            $target = @($mg.Group | Where-Object { $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs } | Sort-Object LastTimestamp -Descending | Select-Object -First 1)
-            if ($target.Count -eq 0) { continue }   # 整组不保留（不再防御回退到 <阈值 文件）
-            $sessionItems.Add([pscustomobject]@{
-                Kind = 'Session'; Path = $target[0].Cwd; Name = $mg.Name   # Path=末现 cwd（resume 目标）
-                Subtitle = $null
-                LastActive = $target[0].LastTimestamp.ToLocalTime()
-                SessionId = $target[0].SessionId
-                GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=StartCwd（挂到存储目录文件夹下）
-            })
+            # 同名组内达标的会话各自列为独立条目（≥10 的多条同名不再只留最新，
+            # 否则旧同名会话被静默隐藏、cct 进不去）；界面靠最近活动时间区分同名条目
+            $qualified = @($mg.Group | Where-Object { $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs } | Sort-Object LastTimestamp -Descending)
+            if ($qualified.Count -eq 0) { continue }   # 整组不保留（不再防御回退到 <阈值 文件）
+            foreach ($q in $qualified) {
+                $sessionItems.Add([pscustomobject]@{
+                    Kind = 'Session'; Path = $q.Cwd; Name = $mg.Name   # Path=末现 cwd（resume 目标）
+                    Subtitle = $null
+                    LastActive = $q.LastTimestamp.ToLocalTime()
+                    SessionId = $q.SessionId
+                    GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=StartCwd（挂到存储目录文件夹下）
+                })
+            }
         }
         if ($manualGroups.Count -eq 0) {
             # 保底自动项：目录无任何手动命名项（决策 36 原语义不变——手动项被阈值过滤不触发自动项顶替），
@@ -285,7 +288,13 @@ function Get-CctTasks {
     if (-not $IncludeFolderFind) {
         return @($result | Where-Object { $_.Kind -eq 'Session' })
     }
-    return $result
+    # includeFolderFind=1 时 folder 头仅在「组内无任何 Session 项」的纯目录保留——
+    # 同目录已有可 resume 的会话时 folder 头是冗余入口（session 优先），滤除之；顺序不受影响
+    $sessionKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($s in $result) {
+        if ($s.Kind -eq 'Session' -and $s.GroupKey) { [void]$sessionKeys.Add([string]$s.GroupKey) }
+    }
+    return @($result | Where-Object { -not ($_.Kind -eq 'Folder' -and $sessionKeys.Contains([string]$_.GroupKey)) })
 }
 
 # 搜索过滤（决策 16：文件夹名+会话标题+全路径并集，不区分大小写子串；会话命中带出父文件夹）
@@ -303,10 +312,10 @@ function Filter-CctTasks {
     # 会话项命中 → 父文件夹（同 GroupKey 的 Folder 项）一起显示
     $groupKeys = @($hits | Where-Object Kind -eq 'Session' | ForEach-Object GroupKey)
     $withContext = @($hits) + @($Tasks | Where-Object { $_.Kind -eq 'Folder' -and $groupKeys -contains $_.GroupKey })
-    # 保持原顺序去重
+    # 保持原顺序去重；Session 同名且同 cwd 可有多条（同名会话各自列出），去重键并入 SessionId
     $seen = [System.Collections.Generic.HashSet[string]]::new()
     $result = foreach ($it in $withContext) {
-        $key = "$($it.Kind)|$($it.Path)|$($it.Name)"
+        $key = if ($it.Kind -eq 'Session') { "Session|$($it.SessionId)" } else { "$($it.Kind)|$($it.Path)|$($it.Name)" }
         if ($seen.Add($key)) { $it }
     }
     return @($result)

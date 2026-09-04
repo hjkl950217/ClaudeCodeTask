@@ -55,10 +55,10 @@ Describe '模块导出' {
         Import-Module "$PSScriptRoot\..\ClaudeCodeTask.UI\ClaudeCodeTask.psm1" -Force
         (Get-Command cct -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
-    It '数据层端到端：假 projects 目录 → 文件夹项 + 1 个手动会话项' {
+    It '数据层端到端：假 projects 目录 → 会话项输出（folder 头被会话取代）' {
         $tasks = @(Get-CctTasks -Root $script:projRoot -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
-        $tasks.Count | Should -Be 2   # 文件夹 + 1 个手动会话项（调优，12 条）
-        ($tasks | Where-Object Kind -eq 'Folder').Name | Should -Be 'taskA'
+        $tasks.Count | Should -Be 1   # taskA 有可 resume 会话 → folder 头不输出，仅 1 个手动会话项（调优，12 条）
+        @($tasks | Where-Object Kind -eq 'Folder').Count | Should -Be 0
         ($tasks | Where-Object Kind -eq 'Session').SessionId | Should -Be 's1'
     }
     It '旧签名 CctScanner 已缓存的常驻进程：新代码仍能扫出任务（第五轮实锤 bug）' {
@@ -70,7 +70,7 @@ Describe '模块导出' {
         # 并且扫描走新类（若还用旧名，与用户终端场景不同——新进程无旧类，掩盖 bug）。
         ('CctScannerV4' -as [type]) | Should -Not -BeNullOrEmpty
         $tasks = @(Get-CctTasks -Root $script:projRoot -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
-        $tasks.Count | Should -Be 2   # 版本化后扫描必须照常工作
+        $tasks.Count | Should -Be 1   # 版本化后扫描必须照常工作（会话取代 folder 头）
     }
 }
 

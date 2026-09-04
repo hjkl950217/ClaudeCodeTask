@@ -57,9 +57,11 @@ Describe '增量缓存（第十三轮）' {
         $path = Join-Path "$script:proj\E---taskA---" 'a1.jsonl'
         Add-Content -LiteralPath $path -Encoding utf8 -Value ('{"type":"user","cwd":"' + ($script:taskA -replace '\\', '\\') + '","timestamp":"2026-08-30T09:00:00.000Z","message":{"role":"user","content":"new"},"uuid":"unew","parentUuid":null}')
         $t3 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @() -CachePath $script:cachePath)
-        $folder = $t3 | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }
-        $folder | Should -Not -BeNullOrEmpty
-        $folder.LastActive | Should -Be ([datetime]'2026-08-30 17:00:00')   # 09:00Z + 8h
+        # taskA 组有可 resume 会话 → folder 头被 session 取代；组内最新会话项反映缓存更新后的新活动
+        ($t3 | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }) | Should -BeNullOrEmpty
+        $latest = @($t3 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:taskA } | Sort-Object LastActive -Descending)
+        $latest[0].Name | Should -Be '缓存会话A'
+        $latest[0].LastActive | Should -Be ([datetime]'2026-08-30 17:00:00')   # 09:00Z + 8h
         # 缓存已更新：a1 的 userMsgs 12 → 13
         $cache = Get-Content -LiteralPath $script:cachePath -Raw | ConvertFrom-Json
         $a1 = $cache.files.PSObject.Properties | Where-Object Name -like '*a1.jsonl'

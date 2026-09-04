@@ -40,7 +40,7 @@ cct
 - **Add-Type 类型缓存陷阱**：C# 类（`CctScannerV*`、`CctSpinner`、`CctConsoleMode`）经 `Add-Type` 后进程内同名类缓存（内联编译与 `-Path` 加载 dll 同理），改类体必须换类名（V2→V3→V4 惯例），否则旧类型生效。
 - **C# 扫描器归组**：按 `firstCwd`（会话启动/存储目录）归组、`lastCwd` 作 resume 目标——幻影 Folder 根因在此，勿改回按末现目录归组。
 - **增量缓存**：文件数 ≥ 拐点 20 且缓存存在时按 mtime+size 复用；小于拐点走全量且不读写缓存；读/写失败静默回退全量。缓存结构 `{version, files:{path:{mt,sz,raw}}}`。
-- **includeFolderFind 开关**：config 字段 `includeFolderFind`（0 = 默认，只输出含 sessionId 的会话；1 = 同时输出 folder 条目）。扫描始终含 folder（firstCwd 归组/排序依赖它），仅输出/查找层按此过滤。所有 config 消费点统一传 `($cfg.includeFolderFind -eq 1)` 给 `Get-CctTasks -IncludeFolderFind`（`Cct.ps1` 交互式、`Command.ps1` 的 list/find/run）。
+- **includeFolderFind 开关**：config 字段 `includeFolderFind`（0 = 默认，只输出含 sessionId 的会话；1 = 会话 + 「纯 folder」目录——同目录已有可恢复会话时 folder 头被 session 取代，folder 只在无会话组保留）。扫描始终含 folder（firstCwd 归组/排序依赖它），仅输出/查找层按此过滤。所有 config 消费点统一传 `($cfg.includeFolderFind -eq 1)` 给 `Get-CctTasks -IncludeFolderFind`（`Cct.ps1` 交互式、`Command.ps1` 的 list/find/run）。
 - **TitleType 三层值**：jsonl 事件原文 `custom`/`ai`（内核/缓存层）→ 读取层枚举 `userCustom`/`aiGenerate`（`New-CctSessionRecord` 经 `$script:CctTitleKindMap` 映射，**分组比较逻辑用此层**）→ 展示层中文 `自定义命名`/`自动生成`（输出 Session 项，仅供人读、不可比较）。改动任一层须同步比较点与对应测试断言。
 - **中文宽度**：终端列宽一律用 `Get-DisplayWidth`（勿用 `.Length`）；对齐用 `Pad-DisplayLeft/Right`、截断用 `Truncate-Display`。
 - **入口路由（显式 ui）**：`cct`（无参，有 TTY 进交互式 / 无 TTY 降级 list）；`cct ui [词]`（显式交互式）；`cct list/find/run`（命令式，`-h` 出各自帮助）；`-` 开头为全局选项（`-h`/`-v`）；未注册词报「未知子命令」。简单函数 `$args` 收参（带 `[CmdletBinding()]` 会让 `-v` 被 `-Verbose` 吞掉）。

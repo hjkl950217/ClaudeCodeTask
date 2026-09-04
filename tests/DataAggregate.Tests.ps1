@@ -58,13 +58,10 @@ AfterAll {
 Describe 'Get-CctTasks 聚合' {
     BeforeAll { $script:tasks = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup')) }
 
-    It '输出 taskA 文件夹项（手动命名项目录）' {
-        $f = $script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }
-        $f | Should -Not -BeNullOrEmpty
-        $f.Name | Should -Be 'taskA'
-    }
-    It 'taskA 副标题 = 最近会话标题（a2 账号调优最新）' {
-        ($script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }).Subtitle | Should -Be '账号调优'
+    It 'taskA 目录有会话组：folder 头被 session 取代（session 优先），会话平铺保留' {
+        # 同目录已有可 resume 的会话时 folder 头冗余——taskA 有账号调优/codex伪装/中途切换 3 个会话组 → 不输出 folder
+        ($script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }) | Should -BeNullOrEmpty
+        @($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:taskA }).Count | Should -Be 3
     }
     It 'taskA 会话项：手动命名全保留（codex伪装 12 条 + 账号调优 15 条），自动命名 3 条不保留（已有手动项，决策 36）' {
         $sessions = @($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.Path -eq $script:taskA })
@@ -107,8 +104,9 @@ Describe 'Get-CctTasks 聚合' {
         $sessions[0].SessionId | Should -Be 'c1'   # c2 是 0 条空壳，跳过（发现 22）
         $sessions[0].TitleType | Should -Be '自动生成'
     }
-    It 'taskC 副标题 = c2 的标题（最近会话，尽管它是空壳但有标题）' {
-        ($script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskC }).Subtitle | Should -Be '整理用量接口'
+    It 'taskC 目录有会话组：folder 头同样被 session 取代（不输出），保留保底自动项' {
+        ($script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskC }) | Should -BeNullOrEmpty
+        ($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:taskC }).SessionId | Should -Be 'c1'
     }
     It '已删除目录不出现（决策 9）' {
         $script:tasks | Where-Object { $_.Path -eq $script:taskDeleted } | Should -BeNullOrEmpty
@@ -120,18 +118,15 @@ Describe 'Get-CctTasks 聚合' {
     It 'ConfigBackup 目录排除' {
         $script:tasks | Where-Object { $_.Name -eq '备份会话' -or $_.Subtitle -eq '备份会话' } | Should -BeNullOrEmpty
     }
-    It '排序：文件夹按最近活动降序，会话项紧跟所属文件夹（决策 15）' {
-        # taskA 最近活动 08-27（a2），taskC 08-27（c2 09:00，c9 已删除不计），taskB 08-20
-        # taskA(08-27T10:00) > taskC(08-27T09:00) > taskB(08-20)
-        $folders = @($script:tasks | Where-Object Kind -eq 'Folder')
-        $folders[0].Path | Should -Be $script:taskA
-        $folders[1].Path | Should -Be $script:taskC
-        $folders[2].Path | Should -Be $script:taskB
-        # taskA 的会话项紧跟其后：索引 1 = 账号调优（组内最新），索引 2 = codex伪装，索引 3 = 中途切换（最早）
-        $script:tasks[1].Name | Should -Be '账号调优'
-        $script:tasks[2].Name | Should -Be 'codex伪装'
-        $script:tasks[3].Name | Should -Be '中途切换'
-        $script:tasks[4].Kind | Should -Be 'Folder'   # 下一个是 taskC
+    It '排序：folder 头仅保留在纯目录；会话按目录分组、组内按最近活动降序' {
+        # 目录组先后由组内最新活动决定：taskA(08-27T10) > taskC(08-27T09) > taskB(08-20)
+        # 有会话组的目录（taskA/taskC）不输出 folder 头、直接平铺会话；纯目录 taskB 的 folder 头保留在末尾
+        $script:tasks[0].Name | Should -Be '账号调优'        # taskA 组（无 folder 头，会话直接平铺）
+        $script:tasks[1].Name | Should -Be 'codex伪装'
+        $script:tasks[2].Name | Should -Be '中途切换'
+        $script:tasks[3].Name | Should -Be '整理用量接口'      # taskC 组
+        $script:tasks[4].Kind | Should -Be 'Folder'           # taskB 是纯目录 → folder 头在
+        $script:tasks[4].Path | Should -Be $script:taskB
     }
     It 'LastActive 转本地时间（UTC+8）' {
         $f = $script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskB }
@@ -151,6 +146,19 @@ Describe 'Get-CctTasks 聚合' {
         New-TestJsonl "$script:proj\E---taskB---" 'b2' $script:taskB '2026-08-26T10:00:00.000Z' 2 '小会话' 'custom'
         $tasks4 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
         ($tasks4 | Where-Object { $_.Kind -eq 'Session' -and $_.Name -eq '小会话' }) | Should -BeNullOrEmpty
+    }
+    It '同名手动命名：组内多条 ≥10 各自列出，不再只留最新（旧同名会话不再被隐藏）' {
+        New-TestJsonl "$script:proj\E---taskC---" 'e1' $script:taskC '2026-08-10T10:00:00.000Z' 12 '重构' 'custom'
+        New-TestJsonl "$script:proj\E---taskC---" 'e2' $script:taskC '2026-08-20T10:00:00.000Z' 15 '重构' 'custom'
+        New-TestJsonl "$script:proj\E---taskC---" 'e3' $script:taskC '2026-08-21T10:00:00.000Z' 5 '重构' 'custom'   # <10，不列出
+        $tasks5 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
+        $s = @($tasks5 | Where-Object { $_.Kind -eq 'Session' -and $_.Name -eq '重构' })
+        $s.Count | Should -Be 2
+        @($s | ForEach-Object SessionId | Sort-Object) | Should -Be @('e1', 'e2')   # 各列一条，含较旧但达标的 e1
+        # 过滤链路去重键并入 SessionId：同名两条经 Query 过滤后仍各自保留（不被 Kind|Path|Name 并成一条）
+        $filtered = @(Filter-CctTasks -Tasks $tasks5 -Query '重构')
+        @($filtered | Where-Object Kind -eq 'Session').Count | Should -Be 2
+        @($filtered | ForEach-Object SessionId | Sort-Object) | Should -Be @('e1', 'e2')
     }
 }
 

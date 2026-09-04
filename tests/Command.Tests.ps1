@@ -16,7 +16,8 @@ BeforeAll {
     New-Item -ItemType Directory -Force "$script:projRoot\E---t---" | Out-Null
     $script:taskA = Join-Path $script:tmp 'taskA'
     $script:taskB = Join-Path $script:tmp 'taskB'
-    New-Item -ItemType Directory -Force $script:taskA, $script:taskB | Out-Null
+    $script:taskC = Join-Path $script:tmp 'taskC'   # 纯 folder 目录（无 ≥10 会话），用于 includeFolderFind=1 保留 folder 头
+    New-Item -ItemType Directory -Force $script:taskA, $script:taskB, $script:taskC | Out-Null
     $script:origLoc = (Get-Location).Path
 
     function New-TestJsonl([string]$Name, [int]$Msgs, [string]$Ts, [string]$Title, [string]$Cwd) {
@@ -32,6 +33,7 @@ BeforeAll {
     New-TestJsonl 's1' 12 '2026-08-27T02:00:00.000Z' '调优' $script:taskA
     New-TestJsonl 's2' 15 '2026-08-28T02:00:00.000Z' '日志整理' $script:taskA
     New-TestJsonl 's3' 20 '2026-08-29T02:00:00.000Z' '部署' $script:taskB
+    New-TestJsonl 'x1' 4 '2026-08-26T02:00:00.000Z' '零散记录' $script:taskC   # <10 条 → taskC 保持纯 folder
 
     # 强制走全量扫描（无缓存文件 < 拐点 20 天然全量），不走真实用户缓存
     $script:cachePath = Join-Path $script:tmp 'not-exist-cache.json'
@@ -287,12 +289,17 @@ Describe 'Invoke-CctList（list 命令：扫描 + 过滤）' {
         ($r | Where-Object Kind -eq 'Folder').Count | Should -Be 0
         ($r | Where-Object Kind -eq 'Session').Count | Should -BeGreaterThan 0
     }
-    It 'config includeFolderFind=1 时同时输出 folder 与会话' {
+    It 'config includeFolderFind=1：session 优先——有会话目录不输出 folder 头，仅纯 folder 目录保留' {
         $cfg1 = Join-Path $script:tmp 'config_inc.json'
         @{ launchCommand='x'; resumeCommand='x'; excludePathPatterns=@(); maxVisibleRows=0; minUserMessages=10; includeFolderFind=1 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $cfg1 -Encoding utf8
         $r = @(Invoke-CctList -Root $script:projRoot -ConfigPath $cfg1 -ExcludePatterns $script:noExclude)
-        ($r | Where-Object Kind -eq 'Folder').Count | Should -BeGreaterThan 0
-        ($r | Where-Object Kind -eq 'Session').Count | Should -BeGreaterThan 0
+        # taskA/taskB 目录有 ≥10 会话 → 其 folder 头被 session 取代；纯 folder 目录 taskC 的 folder 头保留
+        ($r | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }) | Should -BeNullOrEmpty
+        ($r | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskB }) | Should -BeNullOrEmpty
+        $folders = @($r | Where-Object Kind -eq 'Folder')
+        $folders.Count | Should -Be 1
+        $folders[0].Path | Should -Be $script:taskC
+        ($r | Where-Object Kind -eq 'Session').Count | Should -Be 3
     }
     It '过滤词命中手动命名会话' {
         $r = @(Invoke-CctList -Tokens @('调优') -Root $script:projRoot -ConfigPath $script:cfgPath -ExcludePatterns $script:noExclude)

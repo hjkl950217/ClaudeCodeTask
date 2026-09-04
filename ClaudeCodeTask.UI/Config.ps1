@@ -13,7 +13,8 @@ function Get-CctConfig {
         maxVisibleRows     = 0
         minUserMessages    = 10
         # 查找/列出时是否包含「文件夹」条目：0 = 默认只显示有 sessionId 的会话（推荐）；
-        # 1 = 同时显示文件夹类型（目录本身作为可启动项）。扫描始终含文件夹，仅输出/查找层受此控制
+        # 1 = 显示文件夹类型，但「目录下已有可恢复会话时该目录由会话代表」——folder 头只在无
+        #     任何可恢复会话的纯目录保留（session 优先）。扫描始终含文件夹，仅输出/查找层受此控制
         includeFolderFind  = 0
     }
 
