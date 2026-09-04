@@ -10,7 +10,7 @@
 [![PSGallery](https://img.shields.io/powershellgallery/v/ClaudeCodeTask?label=PSGallery&logo=powershell&logoColor=white)](https://www.powershellgallery.com/packages/ClaudeCodeTask)
 [![Downloads](https://img.shields.io/powershellgallery/dt/ClaudeCodeTask?label=Downloads)](https://www.powershellgallery.com/packages/ClaudeCodeTask)
 
-一条命令列出所有 Claude Code 任务文件夹，选中自动 `cd` 并启动 `claude`。
+一条命令列出所有 [Claude Code](https://claude.ai/code) 任务文件夹，选中自动 `cd` 并启动 `claude`。
 
 > 主要测试平台：Windows（Windows 11 / PowerShell 7.6）。其他平台理论上可运行，但未系统验证。
 
@@ -154,7 +154,7 @@ cct <关键词>           # 带初始过滤词
 | `maxVisibleRows` | 0 (自适应) | 卡片网格最大行数 |
 | `minUserMessages` | 10 | 会话显示阈值（≥ 此条数才显示） |
 
-> **关于 `--dangerously-skip-permissions`**：默认启动命令**不带**该参数。它会跳过 Claude Code 的所有权限确认（工具调用、文件写入、命令执行等直接放行），有安全风险。除非你明确需要完全无人值守，否则不要添加。
+> **关于 `--dangerously-skip-permissions`**：默认启动命令**不带**该参数。它会跳过 [Claude Code](https://claude.ai/code) 的所有权限确认（工具调用、文件写入、命令执行等直接放行），有安全风险。除非你明确需要完全无人值守，否则不要添加。
 
 ## 数据来源
 
@@ -221,6 +221,7 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 
 ## 友情链接
 
+- [Claude Code](https://github.com/anthropics/claude-code) —— Anthropic 官方命令行工具
 - [LINUX DO](https://linux.do) —— 新的理想型技术社区
 
 ## 许可
