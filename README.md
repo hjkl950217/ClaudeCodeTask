@@ -28,6 +28,7 @@
 - 支持会话中途 `cd` 到子目录——列表按存储目录分组，恢复目标指向子目录
 - 退出 claude 后终端留在任务目录
 - 增量缓存：热启动扫描加速 ~65-73%
+- `cct clear` 清理：无参清 cct 扫描缓存（下次扫描全量重建）；`-cc` 按行数判定清理多余 Claude Code 会话（每目录保留最新 ≥ 阈值会话，先预览过滤规则与待删清单、确认后删除）
 
 ## 技术亮点
 
@@ -123,7 +124,19 @@ Install-Module -Name .\ClaudeCodeTask.0.1.0.nupkg -SkipPublisherCheck -Force
 ```powershell
 cct                    # 弹出任务列表，空白输入 = 全部
 cct <关键词>           # 带初始过滤词
+cct clear              # 清理 cct 扫描缓存（cache.json），下次扫描全量重建
+cct clear -cc          # 清理多余 Claude Code 会话（先预览过滤规则与待删清单，确认后删除）
 ```
+
+`cct clear` 选项：
+
+| 选项 | 说明 |
+|------|------|
+| `-cc` | 清理多余会话（不与清缓存同用；用此参数时不动 cct 缓存） |
+| `-y, --yes` | 跳过交互确认直接删除（非交互环境不加 --yes 时只预览不删） |
+| `--keep <数>` | 每目录保留的最新会话个数（默认 1） |
+| `--min <行数>` | 会话有效行数阈值，「对话次数」按 .jsonl 行数近似（默认 20） |
+| `--dry-run` | 只打印预览，不删除 |
 
 选择器操作：
 
@@ -192,8 +205,8 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pester -Path 'tests\Selector.Tests.ps1' -Output Detailed"
 ```
 
-- 测试覆盖：13 个测试文件，139 个测试用例
-- 涵盖：数据提取、聚合、搜索、选择器渲染、配置、启动执行、缓存
+- 测试覆盖：15 个测试文件，225 个测试用例
+- 涵盖：数据提取、聚合、搜索、选择器渲染、配置、启动执行、缓存、清理（clear）
 
 ### 项目结构
 
@@ -211,13 +224,14 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 │   ├── Data.ps1           数据层（调用 Core dll，并行 + 增量缓存）
 │   ├── Selector.ps1       界面层（全屏卡片网格，行 diff 重绘）
 │   ├── Launcher.ps1       执行层（启动/恢复 claude）
+│   ├── Clear.ps1          清理层（cct clear：清缓存 / 清理多余会话）
 │   ├── Cct.ps1            主入口
 │   ├── Config.ps1         配置读写
 │   ├── Display.ps1        显示工具（中文/emoji 宽度按 East Asian Width 判定）
 │   ├── Spinner.ps1        加载动画
 │   ├── ClaudeCodeTask.psd1  模块清单
 │   └── ClaudeCodeTask.psm1  模块声明（导出 cct 命令）
-├── tests/           # Pester 测试（13 文件）
+├── tests/           # Pester 测试（15 文件）
 │   └── fixtures/     测试夹具（fake-claude.ps1 等）
 ├── 经验和文档/       # 长期保存的排查复盘、决策记录（随仓库推送）
 │   └── 性能调试/      性能探针复盘（claude 接管时序）

@@ -6,6 +6,7 @@ $moduleRoot = $PSScriptRoot
 . (Join-Path $moduleRoot 'Data.ps1')
 . (Join-Path $moduleRoot 'Selector.ps1')
 . (Join-Path $moduleRoot 'Launcher.ps1')
+. (Join-Path $moduleRoot 'Clear.ps1')
 . (Join-Path $moduleRoot 'Command.ps1')
 . (Join-Path $moduleRoot 'Cct.ps1')
 

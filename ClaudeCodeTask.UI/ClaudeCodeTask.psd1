@@ -1,6 +1,6 @@
 @{
     RootModule           = 'ClaudeCodeTask.psm1'
-    ModuleVersion        = '0.2.1'
+    ModuleVersion        = '0.3.0'
     CompatiblePSEditions = @('Core')
     GUID                 = '185bb7d7-e410-451b-8300-db7dfcb1a244'
     Author               = '长空X'
@@ -17,7 +17,7 @@
             Tags         = @('ClaudeCode', 'claude', 'task-selector', 'TUI', 'PSEdition_Core', 'Windows')
             LicenseUri   = 'https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/hjkl950217/ClaudeCodeTask'
-            ReleaseNotes = '修复从 Gallery/zip 安装即用（内核 dll 内嵌模块包）；同名历史会话各自列出不再被隐藏（0.2.0 起仅留最新）；文件夹条目仅在没有可恢复会话的纯目录保留。'
+            ReleaseNotes = '0.3.0：新增 cct clear 命令——无参清 cct 扫描缓存（cache.json）；cct clear -cc 清理多余 Claude Code 会话（每目录仅保留最新且行数 ≥ 阈值的一个，先打印过滤规则与待删清单、确认后删除）。'
         }
     }
 }

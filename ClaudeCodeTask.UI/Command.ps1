@@ -10,10 +10,11 @@
 
 # 子命令注册表（新增子命令在此登记；help/version 由 Resolve 直接处理，不入表）
 $script:CctCommands = @{
-    'list' = 'Invoke-CctList'
-    'find' = 'Invoke-CctFind'
-    'run'  = 'Invoke-CctRun'
-    'ui'   = 'Invoke-CctUi'
+    'list'  = 'Invoke-CctList'
+    'find'  = 'Invoke-CctFind'
+    'run'   = 'Invoke-CctRun'
+    'ui'    = 'Invoke-CctUi'
+    'clear' = 'Invoke-CctClear'
 }
 
 # 空格规范化：PowerShell 只按半角空格切分参数，全角空格（U+3000）会黏在 token 内。
@@ -270,6 +271,21 @@ function Get-CctHelpText {
                     '  <过滤词>             定位会话的过滤词（不带 -i 时），放在最后输入', '',
                     '选项:', '  --dry-run    演练运行，显示将启动的命令但不真正启动', '  -h, --help   显示本命令帮助')
             }
+            'clear' {
+                return @('[指令] cct clear —— 清理 cct 缓存或多余会话', '',
+                    '用法: cct clear [-cc] [选项]', '',
+                    '说明: 不带 -cc 时删除 cct 的扫描缓存（~/.cct/cache.json），下次扫描自动全量重建；',
+                    '      带 -cc 时改为清理多余 Claude Code 会话（不动 cct 缓存）。',
+                    '      清理会话会先打印「过滤规则 + 待删清单 + 理由」，确认后才删除；',
+                    '      删除不可逆，删除前请核对清单。', '',
+                    '选项:',
+                    '  -cc               清理多余 Claude Code 会话（跳过缓存清理）',
+                    '  -y, --yes         删除前跳过二次确认',
+                    '  --keep <数>       每目录保留的会话数（默认 1，-cc 用）',
+                    '  --min <行数>      会话行数阈值，≥ 该行数才算有效会话（默认 20，-cc 用）',
+                    '  --dry-run         只打印规则与清单，不删除（-cc 用）',
+                    '  -h, --help        显示本命令帮助')
+            }
             default {
                 return @("未知命令: $Command，无法显示帮助", '', '用 cct -h 查看全局帮助。')
             }
@@ -283,6 +299,7 @@ function Get-CctHelpText {
         '  [指令] list    列出任务          cct list [过滤词...]',
         '  [指令] find    查找会话          cct find <过滤词>',
         '  [指令] run     定位并启动会话      cct run [选项] (-i <会话id> | <过滤词>)',
+        '  [指令] clear   清理缓存或多余会话   cct clear [-cc] [选项]',
         '  [指令] help    显示帮助          cct help',
         '  [指令] version 显示版本          cct version', '',
         '选项:',

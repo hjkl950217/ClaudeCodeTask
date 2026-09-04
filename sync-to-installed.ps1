@@ -7,7 +7,7 @@
 #   pwsh -NoProfile -File .\sync-to-installed.ps1            # 备份旧文件后覆盖
 #   pwsh -NoProfile -File .\sync-to-installed.ps1 -ListOnly  # 只预览，不改动
 #
-# 源   = .\ClaudeCodeTask.UI\（10 个 ps1/psd1/psm1 + lib\ClaudeCodeTask.Core.dll）
+# 源   = .\ClaudeCodeTask.UI\（11 个 ps1/psd1/psm1 + lib\ClaudeCodeTask.Core.dll）
 # 目标 = $HOME\Documents\PowerShell\Modules\ClaudeCodeTask\<仓库 psd1 版本号>\（可用 -Target 覆盖）
 # 备份 = %TEMP%\cct-sync-backup\<yyyyMMdd-HHmmss>\（先备份再覆盖）
 
@@ -24,7 +24,7 @@ $srcDir   = Join-Path $repoRoot 'ClaudeCodeTask.UI'
 # 模块发布内容（与安装副本逐文件对应）
 $topFiles = @(
     'Cct.ps1', 'ClaudeCodeTask.psd1', 'ClaudeCodeTask.psm1', 'Command.ps1',
-    'Config.ps1', 'Data.ps1', 'Display.ps1', 'Launcher.ps1', 'Selector.ps1', 'Spinner.ps1'
+    'Config.ps1', 'Data.ps1', 'Display.ps1', 'Launcher.ps1', 'Selector.ps1', 'Spinner.ps1', 'Clear.ps1'
 )
 
 # 定位目标目录
@@ -77,8 +77,19 @@ if ($ListOnly) {
 
 if ($toChange.Count -eq 0) {
     Write-Host '无需更新：仓库源码与本机安装副本完全一致。'
+    # 即使无变化，也把当前进程切到仓库当前版本（满足「同步完即可用」）：
+    $newManifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Target 'ClaudeCodeTask.psd1')
+    $newVersion  = [string]$newManifest.ModuleVersion
+    Remove-Module ClaudeCodeTask -Force -ErrorAction SilentlyContinue
+    Import-Module -Force -ErrorAction Stop -Name (Join-Path $Target 'ClaudeCodeTask.psm1')
+    Write-Host ''
+    Write-Host "当前终端已直接加载 cct v$newVersion，输入 cct 即用（无需重开终端）"
     exit 0
 }
+
+# 目标 lib\ 子目录可能不存在（新建空版本目录时），先确保它存在再拷 dll
+$libDir = Join-Path $Target 'lib'
+if (-not (Test-Path -LiteralPath $libDir)) { New-Item -ItemType Directory -Path $libDir -Force | Out-Null }
 
 # 先备份将被覆盖的旧文件，再逐个覆盖
 $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) ('cct-sync-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -107,5 +118,13 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 
+# 同步完成：当前进程直接卸载旧缓存、强制导入刚同步的版本，无需重开终端即可用新代码
+# 注：目录名是版本号、不等于模块名（ClaudeCodeTask），传目录路径导入会报「no valid module file」，
+# 所以显式导目标目录下的 psm1 文件（路径直导，绕开 PowerShell 的模块名/目录名匹配规则）。
+$newManifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Target 'ClaudeCodeTask.psd1')
+$newVersion  = [string]$newManifest.ModuleVersion
+Remove-Module ClaudeCodeTask -Force -ErrorAction SilentlyContinue
+Import-Module -Force -ErrorAction Stop -Name (Join-Path $Target 'ClaudeCodeTask.psm1')
+
 Write-Host ''
-Write-Host '同步完成。新开一个终端输入 cct 即为仓库当前代码。'
+Write-Host "同步完成。当前终端已直接加载 cct v$newVersion，输入 cct 即用新代码（无需重开终端）"
