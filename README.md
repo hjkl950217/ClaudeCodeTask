@@ -32,7 +32,7 @@
 
 ## 技术亮点
 
-- **预编译 C# 内核（ClaudeCodeTask.Core）**：性能关键路径由 C# 内核 dll 承担（`CctScannerV4` 并行读盘 + 增量缓存），PowerShell 只做类型转换，扫描提速约 24 倍
+- **预编译 C# 内核（ClaudeCodeTask.Core）**：性能关键路径由 C# 内核 dll 承担（`CctScannerV5` 并行读盘 + 增量缓存），PowerShell 只做类型转换，扫描提速约 24 倍
 - **并行扫描**：C# `Parallel.For` 并发读盘，无共享状态，单文件异常不中断整体
 - **增量缓存**：文件数 ≥ 20 且缓存存在时，按 mtime+size 复用精确结果，热启动快 ~65-73%
 - **纯 .NET 目录判定**：`Directory.Exists` 替代 `Test-Path`，免 PowerShell 提供程序开销
@@ -214,7 +214,7 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 ├── .github/           # GitHub 集成（CI 测试 + PSGallery 发布工作流 + issue 模板）
 │   └── workflows/     ci.yml（push/PR 跑 Pester）+ publish.yml（release 发布到 PSGallery）
 ├── ClaudeCodeTask.Core/ # C# 内核（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）
-│   ├── CctScannerV4.cs        并行读盘扫描 + 增量缓存支持
+│   ├── CctScannerV5.cs        并行读盘扫描 + 增量缓存 + 会话血缘提取
 │   ├── CctSpinner.cs          加载动画
 │   ├── CctConsoleMode.cs      控制台模式（TTY 保持）
 │   ├── build.ps1              内核编译脚本（产物 lib/ClaudeCodeTask.Core.dll）

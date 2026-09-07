@@ -28,6 +28,15 @@
 #   - 用户提议「行数近似 UserMsgs」经 130 文件样本验证不可行（比例 0.001~0.208、阈值误判 79-92%），
 #     故缓存仍存精确 userMsgs（只是避免重复全量扫描），正确性无损。
 #   - 缓存存 ~/.cct/cache.json（与 config.json 同目录）；读/写失败均静默回退全量。
+# 第十九轮修复（2026-09-07）：
+#   - 类名版本化 CctScannerV4 → CctScannerV5：输出 6→7 列，新增 ancestors（文件内蛇形
+#     session_id 指向的他者会话 id，';' 连接）。根因：claude -c/--resume 续接会话会在同一
+#     编码目录生成携带祖先历史的新 jsonl（历史行 message 层带蛇形 session_id），旧扫描
+#     无法识别血缘 → 祖先与后代各自列出（同题同名重复卡，用户反馈 bug 1）；
+#     碎片目录全部 <阈值时只剩 folder 卡，folder 副标题与进入后标题不一致（用户反馈 bug 2）。
+#   - 聚合层新增「续接分叉折叠」：同目录内后代达标时折叠祖先（对话链只留最新端点）；
+#     「目录升格」：纯碎片目录（无任何合格会话）把「有标题且 ≥1 真实消息」的最新碎片
+#     升格为会话卡（豁免阈值，精确 --resume），folder 头被既有逻辑滤除。
 
 # 文件数拐点：达到该值且缓存可用才走增量路径（测试可覆盖该 script 变量）
 $script:CctCacheMinFiles = 20
@@ -37,8 +46,8 @@ $script:CctCacheMinFiles = 20
 $script:CctTitleKindMap = @{ 'custom' = 'userCustom'; 'ai' = 'aiGenerate' }
 
 # C# 扫描器已独立到 ClaudeCodeTask.Core（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）。
-# 类名版本化约定保留：签名变更必须换名（V2→V3→V4），Add-Type 类型缓存仍在进程 AppDomain。
-if (-not ('CctScannerV4' -as [type])) {
+# 类名版本化约定保留：签名变更必须换名（V2→V3→V4→V5），Add-Type 类型缓存仍在进程 AppDomain。
+if (-not ('CctScannerV5' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot 'lib\ClaudeCodeTask.Core.dll')
 }
 
@@ -64,6 +73,9 @@ function New-CctSessionRecord {
     }
     $userMsgs = [int]$Raw[5]
 
+    # 第十九轮：第 7 列 ancestors（';' 分隔的祖先会话 id；空串 → 空数组）
+    $ancestors = if ($Raw.Length -gt 6 -and $Raw[6]) { $Raw[6].Split(';') } else { @() }
+
     return [pscustomobject]@{
         SessionId      = $sessionId
         StartCwd       = if ($Raw[0]) { $Raw[0] } else { $null }   # 首现 cwd = 启动/存储目录
@@ -73,6 +85,7 @@ function New-CctSessionRecord {
         TitleType      = if ($Raw[4] -and $script:CctTitleKindMap.ContainsKey([string]$Raw[4])) { $script:CctTitleKindMap[[string]$Raw[4]] } else { $null }
         UserMsgs       = $userMsgs
         HasRealUserMsg = ($userMsgs -ge 1)
+        Ancestors      = @($ancestors)
     }
 }
 
@@ -83,30 +96,31 @@ function Read-CctSessionFile {
     $sessionId = [System.IO.Path]::GetFileNameWithoutExtension($Path)
     $raw = $null
     try {
-        $raw = [CctScannerV4]::ScanFile($Path)
+        $raw = [CctScannerV5]::ScanFile($Path)
     } catch {
         # 读取失败（文件被占用等）：返回空记录
         return [pscustomobject]@{
             SessionId = $sessionId; StartCwd = $null; Cwd = $null; LastTimestamp = $null
-            Title = $null; TitleType = $null; UserMsgs = 0; HasRealUserMsg = $false
+            Title = $null; TitleType = $null; UserMsgs = 0; HasRealUserMsg = $false; Ancestors = @()
         }
     }
 
     return New-CctSessionRecord $Path $raw
 }
 
-# 读取会话扫描缓存（结构: {version:1, files:{<path>:{mt:<ticks>, sz:<bytes>, raw:<string[6]>}}}）
-# 损坏/版本不符/不存在 → 返回 $null（调用方回退全量扫描）
+# 读取会话扫描缓存（结构: {version:2, files:{<path>:{mt:<ticks>, sz:<bytes>, raw:<string[7]>}}}）
+# 第十九轮 version 1→2（raw 6→7 列，旧缓存无 ancestors 列）；损坏/版本不符/不存在 →
+# 返回 $null（调用方回退全量扫描，旧缓存被新结构覆盖）
 function Read-CctSessionCache {
     param([string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     try {
         $obj = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
-        if ($null -eq $obj -or $obj.version -ne 1 -or $null -eq $obj.files) { return $null }
+        if ($null -eq $obj -or $obj.version -ne 2 -or $null -eq $obj.files) { return $null }
         $filesMap = @{}
         foreach ($prop in $obj.files.PSObject.Properties) { $filesMap[$prop.Name] = $prop.Value }
-        return @{ version = 1; files = $filesMap }
+        return @{ version = 2; files = $filesMap }
     } catch {
         return $null
     }
@@ -176,7 +190,7 @@ function Get-CctTasks {
             }
         }
         if ($dirty.Count -gt 0) {
-            $dirtyRaw = [CctScannerV4]::ScanAll([string[]]@($dirty), $degree)
+            $dirtyRaw = [CctScannerV5]::ScanAll([string[]]@($dirty), $degree)
             for ($d = 0; $d -lt $dirty.Count; $d++) {
                 $p = $dirty[$d]
                 $rawAll[$pathIndex[$p]] = $dirtyRaw[$d]
@@ -191,9 +205,9 @@ function Get-CctTasks {
         Write-CctSessionCache -Path $CachePath -Cache $cache
     } else {
         # 全量（无缓存或文件 < 拐点）；≥ 拐点且首次无缓存时写缓存供下次增量
-        $rawAll = [CctScannerV4]::ScanAll($paths, $degree)
+        $rawAll = [CctScannerV5]::ScanAll($paths, $degree)
         if ($paths.Count -ge $script:CctCacheMinFiles) {
-            $newCache = @{ version = 1; files = @{} }
+            $newCache = @{ version = 2; files = @{} }
             for ($i = 0; $i -lt $paths.Length; $i++) {
                 $cf = $files[$i]
                 $newCache.files[$paths[$i]] = [pscustomobject]@{ mt = $cf.LastWriteTimeUtc.Ticks; sz = $cf.Length; raw = $rawAll[$i] }
@@ -240,7 +254,20 @@ function Get-CctTasks {
             # 否则旧同名会话被静默隐藏、cct 进不去）；界面靠最近活动时间区分同名条目
             $qualified = @($mg.Group | Where-Object { $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs } | Sort-Object LastTimestamp -Descending)
             if ($qualified.Count -eq 0) { continue }   # 整组不保留（不再防御回退到 <阈值 文件）
+
+            # 第十九轮分叉折叠：同组内「祖先被本组合格后代声明」→ 祖先不单独列出。
+            # 判据：后代 jsonl 历史行携带蛇形 session_id 指向祖先（扫描器 V5 ancestors 列），
+            # 该字段只在续接分叉复制祖先历史时出现。只折叠同目录的祖先（血缘是目录内的对话链）。
+            $qualifiedIds = [System.Collections.Generic.HashSet[string]]::new()
+            foreach ($q in $qualified) { [void]$qualifiedIds.Add($q.SessionId) }
+            $supersededIds = [System.Collections.Generic.HashSet[string]]::new()
             foreach ($q in $qualified) {
+                foreach ($a in $q.Ancestors) {
+                    if ($qualifiedIds.Contains($a) -and $a -ne $q.SessionId) { [void]$supersededIds.Add($a) }
+                }
+            }
+            foreach ($q in $qualified) {
+                if ($supersededIds.Contains($q.SessionId)) { continue }   # 被合格后代折叠，对话链只留最新端点
                 $sessionItems.Add([pscustomobject]@{
                     Kind = 'Session'; Path = $q.Cwd; Name = $mg.Name   # Path=末现 cwd（resume 目标）
                     Subtitle = $null
@@ -261,6 +288,25 @@ function Get-CctTasks {
                     LastActive = $aiBig[0].LastTimestamp.ToLocalTime()
                     SessionId = $aiBig[0].SessionId
                     GroupKey = $folderPath; TitleType = '自动生成'
+                })
+            }
+        }
+
+        # 第十九轮目录升格：组内无任何会话项（手动组全 <阈值 或无手动项且无达标 ai 项）时，
+        # 把「有标题且 ≥1 条真实消息」的最新碎片升格为会话卡（豁免阈值）——碎片目录此前只剩
+        # folder 卡，副标题（标题）与进入后 `claude -c` 恢复会话的标题不一致（用户反馈 bug 2）；
+        # 升格后卡片标题 = 进入后标题，且用精确 --resume 而非 -c 猜测最新。folder 头被既有
+        # includeFolderFind 逻辑滤除（同组已有会话项）。
+        if ($sessionItems.Count -eq 0) {
+            $promote = @($g.Group | Where-Object { $_.Title -and $_.HasRealUserMsg } | Sort-Object LastTimestamp -Descending)
+            if ($promote.Count -gt 0) {
+                $p = $promote[0]
+                $sessionItems.Add([pscustomobject]@{
+                    Kind = 'Session'; Path = $p.Cwd; Name = $p.Title
+                    Subtitle = $null
+                    LastActive = $p.LastTimestamp.ToLocalTime()
+                    SessionId = $p.SessionId
+                    GroupKey = $folderPath; TitleType = if ($p.TitleType -eq 'userCustom') { '自定义命名' } else { '自动生成' }
                 })
             }
         }

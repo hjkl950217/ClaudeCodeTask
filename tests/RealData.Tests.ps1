@@ -14,9 +14,10 @@ Describe '真实数据回归（spec 9）' {
         $script:tasks.Count | Should -BeGreaterThan 20
         $script:tasks.Count | Should -BeLessThan 80
     }
-    It '文件夹项全部存在且非 worktree' {
+    It '目录覆盖（folder 项 + 会话项）全部存在且非 worktree（第十九轮升格后纯目录多变为会话卡，folder 数下降是预期）' {
         $folders = @($script:tasks | Where-Object Kind -eq 'Folder')
-        $folders.Count | Should -BeGreaterThan 10
+        $groupKeys = @($script:tasks | ForEach-Object { $_.GroupKey } | Select-Object -Unique)
+        $groupKeys.Count | Should -BeGreaterThan 10
         foreach ($f in $folders) {
             $f.Path | Should -Not -Match 'worktrees'
             (Test-Path -LiteralPath $f.Path) | Should -BeTrue

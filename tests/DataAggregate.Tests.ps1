@@ -142,10 +142,15 @@ Describe 'Get-CctTasks 聚合' {
         $s.SessionId | Should -Be 'd1'          # 选达标的老文件，不是 1 条的新碎片
         $s.LastActive | Should -Be ([datetime]'2026-08-15 18:00:00')   # 老文件时间（UTC+8）
     }
-    It '决策 34 修订：手动组内全部文件 <阈值 → 整组不保留（不防御回退）' {
+    It '决策 34 修订：手动组内全部文件 <阈值 → 整组不按同名规则列出（第十九轮起由目录升格接手）' {
         New-TestJsonl "$script:proj\E---taskB---" 'b2' $script:taskB '2026-08-26T10:00:00.000Z' 2 '小会话' 'custom'
         $tasks4 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
-        ($tasks4 | Where-Object { $_.Kind -eq 'Session' -and $_.Name -eq '小会话' }) | Should -BeNullOrEmpty
+        # taskB 目录无 ≥阈值 会话 → 同名会话规则不生效；由升格机制代表该目录（组内最新有标题者 = b2）
+        $tb = @($tasks4 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:taskB })
+        $tb.Count | Should -Be 1
+        $tb[0].SessionId | Should -Be 'b2'
+        $tb[0].Name | Should -Be '小会话'
+        $tb[0].TitleType | Should -Be '自定义命名'
     }
     It '同名手动命名：组内多条 ≥10 各自列出，不再只留最新（旧同名会话不再被隐藏）' {
         New-TestJsonl "$script:proj\E---taskC---" 'e1' $script:taskC '2026-08-10T10:00:00.000Z' 12 '重构' 'custom'
@@ -159,6 +164,85 @@ Describe 'Get-CctTasks 聚合' {
         $filtered = @(Filter-CctTasks -Tasks $tasks5 -Query '重构')
         @($filtered | Where-Object Kind -eq 'Session').Count | Should -Be 2
         @($filtered | ForEach-Object SessionId | Sort-Object) | Should -Be @('e1', 'e2')
+    }
+}
+
+Describe '第十九轮：续接分叉折叠与目录升格' {
+    BeforeAll {
+        # 独立 fixture 目录（不与上面共享，避免既有断言相互干扰）。
+        # 注意：分组键 = jsonl 内容首现 cwd（非物理存放目录），任务目录须真实存在（Directory.Exists 过滤）
+        $script:forkDirA = Join-Path $script:tmpRoot 'forkDirA'
+        $script:forkDirB = Join-Path $script:tmpRoot 'forkDirB'
+        New-Item -ItemType Directory -Force $script:forkDirA, $script:forkDirB | Out-Null
+        $script:proj19 = Join-Path $script:tmpRoot 'projects19'
+        New-Item -ItemType Directory -Force "$script:proj19\E---forkA---", "$script:proj19\E---forkB---" | Out-Null
+
+        # 带血缘的 fixture：jsonl 内历史行携带「蛇形 session_id 指向祖先」
+        function New-ForkJsonl {
+            param([string]$Dir, [string]$SessionId, [string]$Cwd, [string]$Ts, [int]$Msgs, [string]$Title, [string[]]$AncestorIds)
+            $cwdJson = $Cwd -replace '\\', '\\'
+            $lines = [System.Collections.Generic.List[string]]::new()
+            if ($Title) {
+                $lines.Add(('{"type":"custom-title","customTitle":"' + $Title + '","sessionId":"' + $SessionId + '"}'))
+            }
+            foreach ($a in $AncestorIds) {
+                # 祖先复制历史：真实 CC 分叉文件里历史行 message 层带蛇形 session_id 指向祖先
+                $lines.Add(('{"parentUuid":null,"type":"user","cwd":"' + $cwdJson + '","timestamp":"' + $Ts + '","session_id":"' + $a + '","message":{"role":"user","content":"history"},"uuid":"h-' + $a + '"}'))
+            }
+            for ($i = 1; $i -le $Msgs; $i++) {
+                $lines.Add(('{"type":"user","cwd":"' + $cwdJson + '","timestamp":"' + $Ts + '","message":{"role":"user","content":"m' + $i + '"},"uuid":"u' + $i + '","parentUuid":null}'))
+            }
+            [System.IO.File]::WriteAllLines((Join-Path $Dir "$SessionId.jsonl"), $lines, [System.Text.UTF8Encoding]::new($false))
+        }
+
+        # forkA：祖先 old（12 条，达标）+ 后代 new（13 条达标，血缘指向 old）→ 只列 new，old 被折叠。
+        # 血缘判据两个硬条件：id 与祖先文件名（SessionId）一致 + GUID 形态（V5 校验）→ fixture 全用 GUID
+        $script:aidOld = '11111111-2222-3333-4444-555555555555'
+        $script:sidNew = '22222222-3333-4444-5555-666666666666'
+        New-ForkJsonl "$script:proj19\E---forkA---" $script:aidOld $script:forkDirA '2026-08-25T10:00:00.000Z' 12 '分叉祖先' @()
+        New-ForkJsonl "$script:proj19\E---forkA---" $script:sidNew $script:forkDirA '2026-08-28T10:00:00.000Z' 13 '分叉祖先' @($script:aidOld)
+        # forkB：续接碎片（全部 <10 条、同标题「账号调优」）→ 全被阈值过滤 →
+        # 目录升格：最新且 ≥1 真实消息的碎片（f2）升格为会话卡，标题与进入后一致
+        $script:sidF1 = '33333333-4444-5555-6666-777777777777'
+        $script:sidF2 = '44444444-5555-6666-7777-888888888888'
+        New-ForkJsonl "$script:proj19\E---forkB---" $script:sidF1 $script:forkDirB '2026-09-04T02:00:00.000Z' 2 '账号调优' @()
+        New-ForkJsonl "$script:proj19\E---forkB---" $script:sidF2 $script:forkDirB '2026-09-07T02:00:00.000Z' 1 '账号调优' @($script:sidF1)
+        New-ForkJsonl "$script:proj19\E---forkB---" 'f0' $script:forkDirB '2026-09-03T02:00:00.000Z' 0 '账号调优' @()
+
+        $script:tasks19 = @(Get-CctTasks -Root $script:proj19 -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
+    }
+
+    It '分叉折叠：后代达标时祖先不单独列出，只留对话链最新端点（bug 1：同标题同路径只出一张卡）' {
+        $s = @($script:tasks19 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:forkDirA })
+        $s.Count | Should -Be 1
+        $s[0].SessionId | Should -Be $script:sidNew
+    }
+    It '祖先折叠不误伤独立会话：无血缘的不同目录同名会话不受影响' {
+        # 主 fixture（proj）的 taskA 三条会话不在 proj19 扫描范围内（proj19 只含 forkA/forkB 编码目录），
+        # 「不误伤」的正向验证 = 既有 18 用例全过（无血缘会话行为不变）；这里断言 forkA 组折叠后仅剩 new
+        $s = @($script:tasks19 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:forkDirA })
+        $s.Count | Should -Be 1
+        $s[0].SessionId | Should -Be $script:sidNew
+    }
+    It '目录升格：纯碎片目录（全部 <阈值）的最新有标题会话升格为会话卡（bug 2：标题与进入后一致）' {
+        $s = @($script:tasks19 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:forkDirB })
+        $s.Count | Should -Be 1
+        $s[0].SessionId | Should -Be $script:sidF2
+        $s[0].Name | Should -Be '账号调优'
+        $s[0].TitleType | Should -Be '自定义命名'
+    }
+    It '目录升格后 folder 头被既有逻辑滤除（同组有会话项）' {
+        @($script:tasks19 | Where-Object { $_.Kind -eq 'Folder' -and $_.GroupKey -eq $script:forkDirB }).Count | Should -Be 0
+    }
+    It '无标题碎片不升格：目录只剩无标题 <阈值 碎片时仍保留 folder 头（决策 37 语义不变）' {
+        $script:proj19b = Join-Path $script:tmpRoot 'projects19b'
+        New-Item -ItemType Directory -Force "$script:proj19b\E---forkC---" | Out-Null
+        New-ForkJsonl "$script:proj19b\E---forkC---" 'g1' $script:forkDirA '2026-09-01T02:00:00.000Z' 2 $null @()
+        $tasks19b = @(Get-CctTasks -Root $script:proj19b -MinUserMsgs 10 -ExcludePatterns @())
+        @($tasks19b | Where-Object { $_.Kind -eq 'Session' }).Count | Should -Be 0
+        $f = @($tasks19b | Where-Object { $_.Kind -eq 'Folder' })
+        $f.Count | Should -Be 1
+        $f[0].GroupKey | Should -Be $script:forkDirA
     }
 }
 

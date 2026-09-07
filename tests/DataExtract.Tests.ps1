@@ -129,5 +129,23 @@ Describe 'Read-CctSessionFile 字段提取' {
         $r.Cwd | Should -BeNullOrEmpty
         $r.UserMsgs | Should -Be 0
     }
+    It '第十九轮：分叉文件提取祖先会话 id（message 蛇形 session_id ≠ 自身 id，去重）' {
+        $p = New-TestJsonl 's-anc' @(
+            '{"parentUuid":null,"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:00.000Z","session_id":"11111111-2222-3333-4444-555555555555","message":{"role":"user","content":"历史"},"uuid":"u1"}',
+            '{"parentUuid":"u1","type":"user","cwd":"C:\\t","timestamp":"2026-08-27T02:00:00.000Z","session_id":"11111111-2222-3333-4444-555555555555","message":{"role":"user","content":"历史2"},"uuid":"u2"}',
+            '{"parentUuid":"u2","type":"assistant","cwd":"C:\\t","timestamp":"2026-08-27T02:00:01.000Z","session_id":"s-anc","message":{"role":"assistant","content":"新消息"},"uuid":"u3"}'
+        )
+        $r = Read-CctSessionFile $p
+        @($r.Ancestors).Count | Should -Be 1
+        $r.Ancestors[0] | Should -Be '11111111-2222-3333-4444-555555555555'
+    }
+    It '第十九轮：session_id 全为自身或非 GUID 形态（工具输出字样）→ Ancestors 空' {
+        $p = New-TestJsonl 's-noanc' @(
+            '{"parentUuid":null,"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:00.000Z","session_id":"s-noanc","message":{"role":"user","content":"a"},"uuid":"u1"}',
+            '{"parentUuid":"u1","type":"user","cwd":"C:\\t","timestamp":"2026-08-27T02:00:00.000Z","session_id":"tool-output-not-guid","message":{"role":"user","content":"b"},"uuid":"u2"}'
+        )
+        $r = Read-CctSessionFile $p
+        @($r.Ancestors).Count | Should -Be 0
+    }
 }
 

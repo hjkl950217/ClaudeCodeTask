@@ -33,7 +33,13 @@ BeforeAll {
     New-TestJsonl 's1' 12 '2026-08-27T02:00:00.000Z' '调优' $script:taskA
     New-TestJsonl 's2' 15 '2026-08-28T02:00:00.000Z' '日志整理' $script:taskA
     New-TestJsonl 's3' 20 '2026-08-29T02:00:00.000Z' '部署' $script:taskB
-    New-TestJsonl 'x1' 4 '2026-08-26T02:00:00.000Z' '零散记录' $script:taskC   # <10 条 → taskC 保持纯 folder
+    # x1 <10 条且无标题：无标题不升格（第十九轮）→ taskC 保持纯 folder 头
+    $x1lines = [System.Collections.Generic.List[string]]::new()
+    $x1cwd = $script:taskC -replace '\\', '\\'
+    for ($i = 1; $i -le 4; $i++) {
+        $x1lines.Add(('{"type":"user","cwd":"' + $x1cwd + '","timestamp":"2026-08-26T02:00:00.000Z","message":{"role":"user","content":"m' + $i + '"},"uuid":"u' + $i + '","parentUuid":null}'))
+    }
+    [System.IO.File]::WriteAllLines((Join-Path "$script:projRoot\E---t---" 'x1.jsonl'), $x1lines, [System.Text.UTF8Encoding]::new($false))
 
     # 强制走全量扫描（无缓存文件 < 拐点 20 天然全量），不走真实用户缓存
     $script:cachePath = Join-Path $script:tmp 'not-exist-cache.json'

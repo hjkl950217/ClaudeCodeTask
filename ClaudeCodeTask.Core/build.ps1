@@ -1,12 +1,22 @@
 # 编译 ClaudeCodeTask.Core（net8.0，预编译 dll 入仓库）：
 #   dotnet build → 拷贝产物到 lib/ClaudeCodeTask.Core.dll（PS 侧 Add-Type -Path 加载此路径）
-# nuget restore 经本地代理 127.0.0.1:10193（环境变量仅本进程生效，不影响系统设置）
+# nuget restore 代理读仓库根 build-metadata.json 的 buildProxy 字段（集中元数据，仅本进程生效）
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $lib = Join-Path $root 'lib'
 
-$env:HTTPS_PROXY = 'http://127.0.0.1:10193'
-$env:HTTP_PROXY = 'http://127.0.0.1:10193'
+$metaPath = Join-Path (Split-Path $root -Parent) 'build-metadata.json'
+if (Test-Path -LiteralPath $metaPath) {
+    try {
+        $meta = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json
+        if ($meta.buildProxy) {
+            $env:HTTPS_PROXY = [string]$meta.buildProxy
+            $env:HTTP_PROXY  = [string]$meta.buildProxy
+        }
+    } catch {
+        Write-Host "build-metadata.json 读取失败（$($_.Exception.Message)），代理跳过" -ForegroundColor Yellow
+    }
+}
 
 dotnet build (Join-Path $root 'ClaudeCodeTask.Core.csproj') -c Release
 if ($LASTEXITCODE -ne 0) { throw "dotnet build 失败 (exit $LASTEXITCODE)" }

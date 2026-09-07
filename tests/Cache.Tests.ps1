@@ -33,12 +33,12 @@ Describe '增量缓存（第十三轮）' {
     It '文件数 ≥ 拐点：首次全量后写缓存（2 条记录）' {
         Test-Path -LiteralPath $script:cachePath | Should -Be $true
         $cache = Get-Content -LiteralPath $script:cachePath -Raw | ConvertFrom-Json
-        $cache.version | Should -Be 1
+        $cache.version | Should -Be 2   # 第十九轮 raw 6→7 列（+ancestors），缓存版本升 2
         @($cache.files.PSObject.Properties).Count | Should -Be 2
         foreach ($p in $cache.files.PSObject.Properties) {
             $p.Value.mt | Should -Not -BeNullOrEmpty
             $p.Value.sz | Should -BeGreaterThan 0
-            @($p.Value.raw).Count | Should -Be 6   # [firstCwd,lastCwd,lastTs,title,titleType,userMsgs]
+            @($p.Value.raw).Count | Should -Be 7   # [firstCwd,lastCwd,lastTs,title,titleType,userMsgs,ancestors]
         }
     }
 

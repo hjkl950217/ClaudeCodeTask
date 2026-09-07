@@ -22,11 +22,11 @@ cct
 
 ## 架构（分层，ClaudeCodeTask.UI/ClaudeCodeTask.psm1 按序 dot-source 加载）
 
-- `ClaudeCodeTask.Core/` 内核层：C# 预编译 dll（`CctScannerV4` 并行扫描器 + `CctSpinner` + `CctConsoleMode`），改内核跑其 `build.ps1` 重新编译，产物 `lib/ClaudeCodeTask.Core.dll`；ps1 用 `Add-Type -Path` 加载
+- `ClaudeCodeTask.Core/` 内核层：C# 预编译 dll（`CctScannerV5` 并行扫描器 + `CctSpinner` + `CctConsoleMode`），改内核跑其 `build.ps1` 重新编译，产物 `lib/ClaudeCodeTask.Core.dll`；ps1 用 `Add-Type -Path` 加载
 - `Display.ps1` 显示工具：`Get-DisplayWidth`（中文/emoji 宽度按 East Asian Width 手判区间，.NET 无内置）、Pad/Truncate、`Get-CctSessionLabel`（标题（目录名）去重省略括号）、`Get-RelativeTime`、`Get-TailPaths`（路径尾部默认 3 级，冲突逐级加深）
 - `Spinner.ps1` 动画：内核 `CctSpinner` + `Invoke-WithSpinner`（输出被重定向时直跑不启动画）
 - `Config.ps1` 配置：读写 `~/.cct/config.json`（首次运行自动生成）
-- `Data.ps1` 数据层：内核 dll `CctScannerV4`（Parallel.For 并发读盘）+ 增量缓存 `~/.cct/cache.json` + `Get-CctTasks`/`Filter-CctTasks`
+- `Data.ps1` 数据层：内核 dll `CctScannerV5`（Parallel.For 并发读盘）+ 增量缓存 `~/.cct/cache.json` + `Get-CctTasks`/`Filter-CctTasks`
 - `Selector.ps1` 界面层：`New-CctFrame`（纯函数帧渲染）+ `Write-CctFrame`（行 diff 重绘）+ `Show-CctSelector`（主循环）
 - `Launcher.ps1` 执行层：`Invoke-CctClaude`（Start-Process 保 TTY）+ 降级链 `-r` → `-c` → prompt
 - `Cct.ps1` 主入口：`Invoke-CctMain`（Tasks/SelectedTask/ConfigPath 均可注入测试）
@@ -37,8 +37,9 @@ cct
 - **固定栏位布局**：搜索行恒在行 0、帮助行恒在末行，帧高恒 = `WindowHeight`，行号稳定 → 终端永不滚屏。`MaxRows = floor((h-3)/5)`，余数行填帮助行上方。
 - **resize 响应**：主循环轮询 `WindowWidth/Height`，变化时 `ESC[2J` 清屏 + 置空 `CctLastRows` 强制全量重绘并立即 `continue` 重绘，不要改成局部刷新。
 - **行 diff 重绘**：`Write-CctFrame` 只重绘变化行；覆盖式写入（不清行），仅新行变短或被删时 `ESC[K]` 清尾/清行。
-- **Add-Type 类型缓存陷阱**：C# 类（`CctScannerV*`、`CctSpinner`、`CctConsoleMode`）经 `Add-Type` 后进程内同名类缓存（内联编译与 `-Path` 加载 dll 同理），改类体必须换类名（V2→V3→V4 惯例），否则旧类型生效。
+- **Add-Type 类型缓存陷阱**：C# 类（`CctScannerV*`、`CctSpinner`、`CctConsoleMode`）经 `Add-Type` 后进程内同名类缓存（内联编译与 `-Path` 加载 dll 同理），改类体必须换类名（V2→V3→V4→V5 惯例），否则旧类型生效。
 - **C# 扫描器归组**：按 `firstCwd`（会话启动/存储目录）归组、`lastCwd` 作 resume 目标——幻影 Folder 根因在此，勿改回按末现目录归组。
+- **续接分叉折叠与目录升格（第十九轮）**：`claude -c`/`--resume` 续接会话会在同一编码目录生成携带祖先历史的新 jsonl（历史行 message 层带蛇形 `session_id` 指向祖先，扫描器 V5 提取为 Ancestors 列）。同目录内「祖先被合格后代声明」→ 祖先折叠，只留对话链最新端点；组内无合格会话时「有标题且 ≥1 真实消息」的最新碎片升格为会话卡（豁免 MinUserMsgs 阈值，精确 --resume）。缓存 version 2（raw 7 列），旧缓存自动废弃重扫。
 - **增量缓存**：文件数 ≥ 拐点 20 且缓存存在时按 mtime+size 复用；小于拐点走全量且不读写缓存；读/写失败静默回退全量。缓存结构 `{version, files:{path:{mt,sz,raw}}}`。
 - **includeFolderFind 开关**：config 字段 `includeFolderFind`（0 = 默认，只输出含 sessionId 的会话；1 = 会话 + 「纯 folder」目录——同目录已有可恢复会话时 folder 头被 session 取代，folder 只在无会话组保留）。扫描始终含 folder（firstCwd 归组/排序依赖它），仅输出/查找层按此过滤。所有 config 消费点统一传 `($cfg.includeFolderFind -eq 1)` 给 `Get-CctTasks -IncludeFolderFind`（`Cct.ps1` 交互式、`Command.ps1` 的 list/find/run）。
 - **TitleType 三层值**：jsonl 事件原文 `custom`/`ai`（内核/缓存层）→ 读取层枚举 `userCustom`/`aiGenerate`（`New-CctSessionRecord` 经 `$script:CctTitleKindMap` 映射，**分组比较逻辑用此层**）→ 展示层中文 `自定义命名`/`自动生成`（输出 Session 项，仅供人读、不可比较）。改动任一层须同步比较点与对应测试断言。
@@ -58,3 +59,9 @@ cct
 ## 临时文件
 
 任务执行完，把本次产生的临时文件直接删除（冒烟验证脚本、测试 fixture 残留、`sync-to-installed.ps1` 产生的空 `cct-sync-backup-*` 备份目录等），不逐次列清单等确认。被系统占用删不掉的（如 0 字节 `cct_err_*.txt`）跳过即可，不阻塞收尾。
+
+## 集中元数据（版本号/域名/发版说明的唯一编辑点）
+
+- `build-metadata.json`（仓库根）：`version` / `projectUri` / `licenseUri` / `releaseNotes` / `buildProxy`（内核构建 nuget 代理）。改版本号只编辑此文件。
+- `StampMetadata.ps1`：`Read-CctBuildMetadata`（读取+校验）与 `Update-CctPsd1FromMetadata`（盖章 psd1 四字段，幂等）。psd1 是模块清单无法动态读外部文件，采用「单一编辑点 + 自动盖章」模式。
+- 消费点：`sync-to-installed.ps1` 同步前自动盖章（失败降级用 psd1 现值）、`Core/build.ps1` 代理读 `buildProxy`、`tests/Metadata.Tests.ps1` 守卫 psd1 与元数据一致（单改 psd1 会红）。发版时 tag 版本仍由 release.yml 的 `Update-ModuleManifest` 机械改写。
