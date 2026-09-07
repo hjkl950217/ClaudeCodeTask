@@ -9,7 +9,6 @@
 [![GitHub stars](https://img.shields.io/github/stars/hjkl950217/ClaudeCodeTask?style=social)](https://github.com/hjkl950217/ClaudeCodeTask)
 [![GitHub top language](https://img.shields.io/github/languages/top/hjkl950217/ClaudeCodeTask)](https://github.com/hjkl950217/ClaudeCodeTask)
 [![PSGallery](https://img.shields.io/powershellgallery/v/ClaudeCodeTask?label=PSGallery&logo=powershell&logoColor=white)](https://www.powershellgallery.com/packages/ClaudeCodeTask)
-[![Downloads](https://img.shields.io/powershellgallery/dt/ClaudeCodeTask?label=Downloads)](https://www.powershellgallery.com/packages/ClaudeCodeTask)
 
 一条命令列出所有 [Claude Code](https://claude.ai/code) 任务文件夹，选中自动 `cd` 并启动 `claude`。
 
