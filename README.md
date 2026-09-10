@@ -79,9 +79,7 @@ Claude Code 任务文件夹选择器：一条命令列出所有 [Claude Code](ht
 
 - [PowerShell 7.6+](https://github.com/PowerShell/PowerShell)
 - [Claude Code](https://claude.ai/code)
-- [Pester 6](https://pester.dev)（仅开发测试需要）
-
-  *Required for development testing only.*
+- [Pester 6](https://pester.dev)（仅开发测试需要，Required for development testing only.）
 
 ### 方式一：从 PowerShell Gallery 安装（推荐）
 
