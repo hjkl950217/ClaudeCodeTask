@@ -1,7 +1,7 @@
 {
-  "version": "0.3.1",
+  "version": "0.3.2",
   "projectUri": "https://github.com/hjkl950217/ClaudeCodeTask",
   "licenseUri": "https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE",
-  "releaseNotes": "0.3.1：续接分叉折叠与目录升格——claude -c/--resume 续接产生的同目录分叉会话不再重复出卡（对话链只留最新端点）；纯碎片目录升格最新有标题会话为会话卡（标题与进入后一致，精确 --resume）；扫描器内核升级至 CctScannerV5；缓存格式升级（旧缓存自动重建）；sync-to-installed.ps1 全面加固（热加载冲突检测、子进程烟测、备份中止保护等）。 | v0.3.1: resume-fork collapsing and folder promotion — fork sessions created by claude -c/--resume no longer show duplicate cards in the same folder (only the newest conversation endpoint remains); a pure-fragment folder promotes its newest titled session to a session card (title matches post-entry, precise --resume); scanner kernel upgraded to CctScannerV5; cache format upgraded (old cache auto-rebuilds); sync-to-installed.ps1 hardened (hot-reload conflict detection, subprocess smoke test, backup-abort protection).",
+  "releaseNotes": "0.3.2：模块对外介绍全面双语化——PowerShell Gallery 模块简介、README 与 GitHub 仓库简介均改为中英双语（中文在前、英文在后）；模块简介扩充为完整功能概述并补充搜索标签；README 每段中文下附英文说明，标题、列表项与代码注释中英分行。 | v0.3.2: all external docs are now bilingual — the PSGallery module description, README and GitHub repo description ship Chinese first, English second; the module description is expanded into a full feature overview with extra search tags; every README paragraph carries an English explanation below it, with titles, list items and code comments split into separate Chinese and English lines.",
   "buildProxy": "http://127.0.0.1:10193"
 }
