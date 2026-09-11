@@ -99,6 +99,9 @@ Describe 'Update-CctPsd1FromMetadata 盖章函数' {
         $bad3 = Join-Path $script:tmp 'bad3.json'
         @{ version = '1.0.0'; projectUri = "https://x'o"; licenseUri = 'https://x'; releaseNotes = 'x'; buildProxy = 'http://x' } | ConvertTo-Json | Set-Content -LiteralPath $bad3 -Encoding utf8
         { Update-CctPsd1FromMetadata -MetadataPath $bad3 -Psd1Path $fp } | Should -Throw "*单引号*"
+        $bad4 = Join-Path $script:tmp 'bad4.json'
+        @{ version = '1.0.0'; projectUri = 'https://x'; licenseUri = 'https://x'; releaseNotes = "1.0.0：用户's 描述"; buildProxy = 'http://x' } | ConvertTo-Json | Set-Content -LiteralPath $bad4 -Encoding utf8
+        { Update-CctPsd1FromMetadata -MetadataPath $bad4 -Psd1Path $fp } | Should -Throw "*单引号*"
     }
     It 'psd1 缺字段行 / 元数据文件不存在 → 明确报错' {
         $fm = New-FixtureMeta

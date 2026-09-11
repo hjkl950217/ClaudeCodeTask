@@ -2,6 +2,6 @@
   "version": "0.3.3",
   "projectUri": "https://github.com/hjkl950217/ClaudeCodeTask",
   "licenseUri": "https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE",
-  "releaseNotes": "0.3.3：修复 claude 以脚本形态安装（npm 的 .cmd/.ps1 或无扩展名）时 cct 启动失败的问题——此前直启脚本类命令报「%1 不是有效的 Win32 应用程序」。启动器现在按 claude 的实际安装形态自动选对启动方式：.cmd/.bat 经 cmd.exe 包装、.ps1 经 pwsh 执行、.exe 直接启动。 | v0.3.3: fixes cct failing to launch when claude is installed as a script (npm's .cmd/.ps1 or an extensionless shim) — launching a script directly used to fail with \"%1 is not a valid Win32 application\". The launcher now detects claude's install shape and picks the right runner: .cmd/.bat via cmd.exe, .ps1 via pwsh, and .exe launched directly.",
+  "releaseNotes": "0.3.3：修复 claude 以脚本形态安装（npm 的 .cmd/.ps1 或无扩展名）时 cct 启动失败的问题——此前直启脚本类命令报「%1 不是有效的 Win32 应用程序」。启动器现在按 claude 的实际安装形态自动选对启动方式：.cmd/.bat 经 cmd.exe 包装、.ps1 经 pwsh 执行、.exe 直接启动。 | v0.3.3: fixes cct failing to launch when claude is installed as a script (npm .cmd/.ps1 or an extensionless shim) — launching a script directly used to fail with \"%1 is not a valid Win32 application\". The launcher now detects the claude install shape and picks the right runner: .cmd/.bat via cmd.exe, .ps1 via pwsh, and .exe launched directly.",
   "buildProxy": "http://127.0.0.1:10193"
 }

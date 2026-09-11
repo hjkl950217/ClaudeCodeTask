@@ -24,7 +24,7 @@ function Read-CctBuildMetadata {
     if ($meta.version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
         throw "集中元数据 version 形态非法：'$($meta.version)'（应为 x.y.z 或 x.y.z.w）"
     }
-    foreach ($k in @('projectUri', 'licenseUri')) {
+    foreach ($k in @('projectUri', 'licenseUri', 'releaseNotes')) {
         if ([string]$meta.$k -match "'") {
             throw "集中元数据 $k 含单引号，psd1 盖章无法安全转义（$MetadataPath）"
         }
