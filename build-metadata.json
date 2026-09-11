@@ -1,7 +1,7 @@
 {
-  "version": "0.3.2",
+  "version": "0.3.3",
   "projectUri": "https://github.com/hjkl950217/ClaudeCodeTask",
   "licenseUri": "https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE",
-  "releaseNotes": "0.3.2：模块对外介绍全面双语化——PowerShell Gallery 模块简介、README 与 GitHub 仓库简介均改为中英双语（中文在前、英文在后）；模块简介扩充为完整功能概述并补充搜索标签；README 每段中文下附英文说明，标题、列表项与代码注释中英分行。 | v0.3.2: all external docs are now bilingual — the PSGallery module description, README and GitHub repo description ship Chinese first, English second; the module description is expanded into a full feature overview with extra search tags; every README paragraph carries an English explanation below it, with titles, list items and code comments split into separate Chinese and English lines.",
+  "releaseNotes": "0.3.3：修复 claude 以脚本形态安装（npm 的 .cmd/.ps1 或无扩展名）时 cct 启动失败的问题——此前直启脚本类命令报「%1 不是有效的 Win32 应用程序」。启动器现在按 claude 的实际安装形态自动选对启动方式：.cmd/.bat 经 cmd.exe 包装、.ps1 经 pwsh 执行、.exe 直接启动。 | v0.3.3: fixes cct failing to launch when claude is installed as a script (npm's .cmd/.ps1 or an extensionless shim) — launching a script directly used to fail with \"%1 is not a valid Win32 application\". The launcher now detects claude's install shape and picks the right runner: .cmd/.bat via cmd.exe, .ps1 via pwsh, and .exe launched directly.",
   "buildProxy": "http://127.0.0.1:10193"
 }

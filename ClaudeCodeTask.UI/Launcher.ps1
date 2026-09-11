@@ -21,8 +21,32 @@ function Invoke-CctClaude {
 
     # 命令拆分：首 token 为可执行文件（含引号形态），其余为参数行
     $m = [regex]::Match($Command, '^\s*("[^"]+"|\S+)\s*(.*)$')
-    $exe = $m.Groups[1].Value.Trim('"')
+    $exeToken = $m.Groups[1].Value
+    $exe = $exeToken.Trim('"')
     $argLine = $m.Groups[2].Value
+
+    # 脚本类可执行：Start-Process 只认原生 Win32 程序，直启脚本报「%1 不是有效的 Win32 应用程序」。
+    # claude 安装形态多样（npm→.cmd/.ps1、bun/原生→无扩展名）；显式路径按扩展名判断，裸名经 Get-Command 解析。
+    switch ([System.IO.Path]::GetExtension($exe).ToLowerInvariant()) {
+        '.cmd'  { $exe = $env:COMSPEC; $argLine = "/c $exeToken $argLine" }   # COMSPEC = cmd.exe 全路径
+        '.bat'  { $exe = $env:COMSPEC; $argLine = "/c $exeToken $argLine" }
+        '.ps1'  { $script = $exe; $exe = (Join-Path $PSHOME 'pwsh.exe'); $argLine = "-NoProfile -File `"$script`" $argLine" }  # 显式全路径
+        '.exe'  { }  # 原生程序：直启保 TTY
+        '' {
+            # 裸名/无扩展名：解析真实目标；脚本形态按解释器包装，解析不到则交 cmd 按 PATHEXT 找配套脚本
+            $resolved = Get-Command -Name $exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($resolved) {
+                switch ([System.IO.Path]::GetExtension($resolved.Path).ToLowerInvariant()) {
+                    '.cmd'  { $exe = $env:COMSPEC; $argLine = "/c $exeToken $argLine" }
+                    '.bat'  { $exe = $env:COMSPEC; $argLine = "/c $exeToken $argLine" }
+                    '.ps1'  { $script = $resolved.Path; $exe = (Join-Path $PSHOME 'pwsh.exe'); $argLine = "-NoProfile -File `"$script`" $argLine" }  # 裸名解析到 ps1，用其全路径
+                }
+            } elseif (-not $exe.Contains([System.IO.Path]::DirectorySeparatorChar)) {
+                $exe = $env:COMSPEC
+                $argLine = "/c $exeToken $argLine"
+            }
+        }
+    }
 
     $errFile = Join-Path ([System.IO.Path]::GetTempPath()) ("cct_err_" + [guid]::NewGuid().ToString('N') + '.txt')
 

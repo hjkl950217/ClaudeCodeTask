@@ -128,6 +128,32 @@ Describe 'Invoke-CctClaude Start-Process 直启（第四轮根因修复：headle
         # fake-claude ok 模式会写日志到 %TEMP%\cct_fake
         (Test-Path (Join-Path $script:fakeDir 'log.txt')) | Should -BeTrue
     }
+    It '脚本 .cmd 类命令：经 cmd.exe 包装仍可执行并透传退出码' {
+        # 回归：npm 安装的 claude 常以 .cmd/.ps1 脚本形态存在，Start-Process 直启脚本报
+        # 「%1 不是有效的 Win32 应用程序」。此用例验证 .cmd 经 cmd.exe /c 包装仍可执行。
+        $d = Join-Path $script:tmp 'cmdwrap'
+        New-Item -ItemType Directory -Force $d | Out-Null
+        $c = Join-Path $d 'fakeclaude.cmd'
+        Set-Content -LiteralPath $c -Value "@echo off`r`nexit /b 7" -Encoding ascii
+        $cmd = "`"$c`" -probe"
+        $exit = Invoke-CctClaude $cmd '测试'
+        $exit | Should -Be 7
+    }
+    It '裸名命令解析到 .ps1 脚本（npm 装 claude 形态）：经 pwsh -File 包装执行并透传退出码' {
+        # 对端（pwsh7）实测：Start-Process 直启 .ps1 报「%1 不是有效的 Win32 应用程序」。
+        # 裸名 claude 经 Get-Command 解析到 claude.ps1（ExternalScript）时，须用 pwsh -File 全路径包装。
+        $d = Join-Path $script:tmp 'ps1wrap'
+        New-Item -ItemType Directory -Force $d | Out-Null
+        Set-Content -LiteralPath (Join-Path $d 'claude.ps1') -Value 'exit 11' -Encoding utf8
+        $oldPath = $env:PATH
+        try {
+            $env:PATH = "$d;$oldPath"
+            $exit = Invoke-CctClaude "claude -c" '测试'
+            $exit | Should -Be 11
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
     It 'L3 兜底 prompt 双引号内联：命令串里 prompt 用双引号包裹（Windows argv 规则）' {
         $s = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-9' }
         # DryRun 走降级链拼装路径吗？不——DryRun 只返回 L1。直接测全失败后的 Command 拼装：
