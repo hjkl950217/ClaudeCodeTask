@@ -55,6 +55,7 @@ cct
 - 每个 `ClaudeCodeTask.UI/*.ps1` 对应 `tests/*.Tests.ps1`；`RealData.Tests.ps1` 跑真实 `~/.claude/projects` 数据，勿改其断言语义；`fixtures/fake-claude.ps1` 是假 claude 启动器（Launcher 测试用）
 - 界面层测试约定：`New-CctFrame` 直接传 `WindowWidth/Height/Now`，断言前用 ANSI 剥离正则取纯文本；`Show-CctSelector` 用 `New-KeySource` 注入按键队列测导航
 - 改界面层必保留既有约束断言：帮助行贴底、帧高恒 = 窗高、每行宽 ≤ WindowWidth
+- **断言不得依赖运行环境**（本地 zh-CN + 长路径 TEMP，CI 是 en-US + 8.3 短名，两处都会「本地绿、CI 红」）：① 比集合用逐项 `Should -Contain`，**不要** `Sort-Object` 后比数组——中文排序按当前区域规则，zh-CN 给「甲,乙」而 en-US 给「乙,甲」；② 临时路径**不要**拿 `$env:TEMP` 拼出期望值再与数据层返回的路径做**字符串相等**比较（CI 的 `$env:TEMP` 是短名 `C:\Users\RUNNER~1\...`，`FileInfo.FullName` 回长名），改比 `GetFileName` 或 `Test-Path`
 
 ## 进度追踪
 
