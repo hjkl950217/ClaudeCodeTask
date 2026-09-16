@@ -147,5 +147,37 @@ Describe 'Read-CctSessionFile 字段提取' {
         $r = Read-CctSessionFile $p
         @($r.Ancestors).Count | Should -Be 0
     }
+    It '第二十二轮：LastUserMsgTime 取最后一条真实输入，末尾终端回显不刷新它' {
+        # 场景：9/14 干完活，9/16 用 cct 进去看一眼再 /exit —— 文件时间被刷成 9/16，
+        # 但真实输入时间必须停在 9/14，否则「谁是最新会话」判断永远错
+        $p = New-TestJsonl 's-lastuser' @(
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:00.000Z","message":{"role":"user","content":"真实1"},"uuid":"u1","parentUuid":null}',
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T02:00:00.000Z","message":{"role":"user","content":"真实2"},"uuid":"u2","parentUuid":"u1"}',
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-09-16T02:45:28.000Z","message":{"role":"user","content":"Continue from where you left off."},"uuid":"u3","parentUuid":"u2"}',
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-09-16T02:45:38.000Z","message":{"role":"user","content":"<local-command-stdout>See ya!</local-command-stdout>"},"uuid":"u4","parentUuid":"u3"}'
+        )
+        $r = Read-CctSessionFile $p
+        $r.LastUserMsgTime | Should -Be ([datetime]'2026-08-27 02:00:00')
+        $r.LastTimestamp | Should -Be ([datetime]'2026-09-16 02:45:38')   # 文件时间仍被刷新，两者刻意分离
+        $r.UserMsgs | Should -Be 2
+    }
+    It '第二十二轮：尖括号系统注入与 CC 续跑提示不计（local-command-stdout / task-notification / Continue …）' {
+        $p = New-TestJsonl 's-sysinject' @(
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:00.000Z","message":{"role":"user","content":"真实"},"uuid":"u1","parentUuid":null}',
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:01.000Z","message":{"role":"user","content":"<local-command-stdout>See ya!</local-command-stdout>"},"uuid":"u2","parentUuid":"u1"}',
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:02.000Z","message":{"role":"user","content":"<task-notification>后台任务完成</task-notification>"},"uuid":"u3","parentUuid":"u2"}',
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:03.000Z","message":{"role":"user","content":"Continue from where you left off."},"uuid":"u4","parentUuid":"u3"}'
+        )
+        $r = Read-CctSessionFile $p
+        $r.UserMsgs | Should -Be 1
+        $r.LastUserMsgTime | Should -Be ([datetime]'2026-08-27 01:00:00')
+    }
+    It '第二十二轮：无真实输入的会话 LastUserMsgTime 为空' {
+        $p = New-TestJsonl 's-nouser' @(
+            '{"type":"user","cwd":"C:\\t","timestamp":"2026-08-27T01:00:00.000Z","message":{"role":"user","content":"/clear"},"uuid":"u1","parentUuid":null}'
+        )
+        $r = Read-CctSessionFile $p
+        $r.LastUserMsgTime | Should -BeNullOrEmpty
+    }
 }
 

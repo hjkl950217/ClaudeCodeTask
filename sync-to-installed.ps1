@@ -9,7 +9,8 @@
 #
 # 源   = .\ClaudeCodeTask.UI\（11 个 ps1/psd1/psm1 + lib\ClaudeCodeTask.Core.dll）
 # 目标 = $HOME\Documents\PowerShell\Modules\ClaudeCodeTask\<仓库 psd1 版本号>\（可用 -Target 覆盖）
-# 备份 = %TEMP%\cct-sync-backup-<yyyyMMdd-HHmmss>\（先备份再覆盖）
+#        该版本目录不存在时自动新建（升版本后首次同步即此场景）
+# 备份 = %TEMP%\cct-sync-backup-<yyyyMMdd-HHmmss>\（先备份再覆盖；没有旧文件要备份时不创建）
 #
 # 环境与冲突检测（2026-09-07 加固）：
 #   1. pwsh 版本：模块要求 PowerShell 7+，5.1 下给中文提示退出
@@ -27,6 +28,9 @@
 #      「需更新」继续，由备份/覆盖阶段报出贴合场景的错误，不在比对阶段整体崩掉
 #   8. 集中元数据盖章：同步前自动把 build-metadata.json（版本号/域名/发版说明的唯一编辑点）
 #      盖章进 psd1，失败降级用 psd1 现值继续，不阻塞同步
+#   9. 收尾自清（同步成功后才做，无需用户收尾）：模块目录下低于当前版本的旧版本目录删到
+#      回收站（PowerShell 只加载版本号最高的目录，旧版本不会再被用到；回收站可还原、
+#      或 Install-Module 重装）；%TEMP% 里的 cct-sync-backup-* 只保留最近 3 个
 
 [CmdletBinding()]
 param(
@@ -78,13 +82,21 @@ Write-Host ''
 
 # 预检
 if (-not (Test-Path -LiteralPath $srcDir)) { throw "仓库源码目录不存在：$srcDir（脚本须放在仓库根目录运行）" }
-if (-not (Test-Path -LiteralPath $Target)) { throw "目标安装目录不存在：$Target`n请先 Install-Module -Name ClaudeCodeTask 安装后再同步，或用 -Target 指定已有模块目录。" }
+# 目标版本目录不存在时直接新建：仓库版本号一升（如 0.3.1 → 0.3.3），按版本定位的目标目录
+# 本来就不存在——这正是「首次同步新版本」的正常场景，不该要求用户先 Install-Module。
+# 新建后走同一套覆盖流程即可：备份阶段对不存在的目标文件有 Test-Path 保护，lib\ 子目录
+# 也有自己的创建逻辑；PowerShell 只加载版本号最高的目录，新版本目录建好即生效。
+$targetIsNew = -not (Test-Path -LiteralPath $Target)
+if ($targetIsNew) {
+    Write-Host "目标安装目录尚不存在，同步时自动新建：$Target" -ForegroundColor Yellow
+    Write-Host '（新版本目录建好后 PowerShell 会自动加载它；想同步到某个已有版本目录请用 -Target 指定）' -ForegroundColor DarkGray
+}
 
 # 检测 6：同目录下其他版本号目录（信息性提示，不阻塞）
 $otherVers = @(Get-ChildItem -LiteralPath (Split-Path -Parent $Target) -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne (Split-Path -Leaf $Target) } | ForEach-Object { $_.Name })
 if ($otherVers.Count -gt 0) {
-    Write-Host "提示：模块目录下还有其他版本（$($otherVers -join ', ')）。PowerShell 只加载版本号最高的目录；确认不再回退后可手动删除旧版本目录。" -ForegroundColor DarkGray
+    Write-Host "提示：模块目录下还有其他版本（$($otherVers -join ', ')）。PowerShell 只加载版本号最高的目录；低于本次同步版本的旧目录会在同步完成后自动清理（进回收站，可还原）。" -ForegroundColor DarkGray
 }
 
 # 组成 源→目标 文件对（顶层文件 + 内嵌 lib dll），逐对判定是否需要更新
@@ -119,7 +131,7 @@ $toChange = @($files | Where-Object Changed)
 # 热加载必撞同名程序集冲突 → 必须跳过。
 function Test-CctCanHotReload {
     param([string]$DataPsPath)
-    # 从新 Data.ps1 读内核守卫类型名（if (-not ('CctScannerV5' -as [type]))），与换名惯例联动、不硬编码
+    # 从新 Data.ps1 读内核守卫类型名（if (-not ('CctScannerV6' -as [type]))），与换名惯例联动、不硬编码
     $guardName = $null
     try {
         $m = Select-String -LiteralPath $DataPsPath -Pattern "'(CctScannerV\d+)' -as \[type\]" | Select-Object -First 1
@@ -166,6 +178,62 @@ function Write-HotReloadBlocked {
     Write-Host '  → 本终端未受影响的继续用旧版；若已处于上述异常状态（上次同步热加载失败遗留），关闭重开即恢复。'
 }
 
+# 目录内是否有文件被其他进程占用（逐个尝试独占打开）。
+# 用途：删旧版本目录前先探测——.NET 把程序集加载进进程后不释放 dll 文件句柄，
+# 凡是某个终端加载过该版本模块的，其 lib\ClaudeCodeTask.Core.dll 会一直被锁；
+# 此时 SHFileOperation 只回一个含混的「指定的路径无效」，先探测才能给出可操作的提示。
+function Test-CctAnyFileLocked {
+    param([string]$Dir)
+    foreach ($f in [System.IO.Directory]::EnumerateFiles($Dir, '*', [System.IO.SearchOption]::AllDirectories)) {
+        try { ([System.IO.File]::Open($f, 'Open', 'ReadWrite', 'None')).Close() }
+        catch { return $true }
+    }
+    return $false
+}
+
+# 检测 9：收尾自清——同步成功后调用，用户无需再手动收尾。复用选择器删除用的回收站
+# 实现（Clear.ps1），不另写一份删除逻辑。
+function Invoke-CctSyncCleanup {
+    param([string]$TargetDir, [string]$SrcDir)
+
+    . (Join-Path $SrcDir 'Clear.ps1')
+
+    $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $TargetDir 'ClaudeCodeTask.psd1')
+    $myVer = [version]([string]$manifest.ModuleVersion)
+
+    # 9a. 模块目录下低于当前版本的旧版本目录：PowerShell 只加载版本号最高的目录，这些不会再
+    #     被用到。删到回收站（可还原）而非永久删——万一要回退还有退路，也可 Install-Module 重装。
+    $oldDirs = @(Get-ChildItem -LiteralPath (Split-Path -Parent $TargetDir) -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+            $v = [version]'0.0'
+            ([version]::TryParse($_.Name, [ref]$v)) -and ($v -lt $myVer)
+        } | Sort-Object Name)
+    if ($oldDirs.Count -gt 0) {
+        Write-Host ''
+        Write-Host "清理 $($oldDirs.Count) 个旧版本目录（低于 v$myVer，进回收站可还原）：$($oldDirs.Name -join ', ')"
+        foreach ($d in $oldDirs) {
+            if (Test-CctAnyFileLocked -Dir $d.FullName) {
+                Write-Host "  跳过 $($d.Name)：目录内有文件被其他终端占用（多为它加载过该版本的内核 dll），关闭那些终端后重跑本脚本即可" -ForegroundColor Yellow
+                continue
+            }
+            $rr = Remove-CctDirToRecycleBin -ProjectDir $d.FullName
+            if ($rr.Ok) { Write-Host "  已清理 $($d.Name)" }
+            else { Write-Host "  清理失败 $($d.Name)：$($rr.Message)" -ForegroundColor Yellow }
+        }
+    }
+
+    # 9b. %TEMP% 里的历史备份目录：只留最近 3 个。备份是「覆盖失败时回滚」的手段，最近几个
+    #     够用；更旧的是本脚本自己的临时产物（内容可从 git / PSGallery 找回），直接删不占回收站。
+    $staleBaks = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'cct-sync-backup-*' -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | Select-Object -Skip 3)
+    if ($staleBaks.Count -gt 0) {
+        foreach ($b in $staleBaks) {
+            try { Remove-Item -LiteralPath $b.FullName -Recurse -Force -ErrorAction Stop } catch { }
+        }
+        Write-Host "已清理 $($staleBaks.Count) 个陈旧备份目录（保留最近 3 个）。"
+    }
+}
+
 if ($ListOnly) {
     if ($toChange.Count -eq 0) {
         Write-Host '无需更新：仓库源码与本机安装副本完全一致。'
@@ -184,8 +252,12 @@ if ($toChange.Count -eq 0) {
         Write-Host ''
         Write-HotReloadBlocked -Version ([string]$newManifest.ModuleVersion) -NoChange
     }
+    Invoke-CctSyncCleanup -TargetDir $Target -SrcDir $srcDir   # 没东西可同步时也把旧版本目录清一清
     exit 0
 }
+
+# 到这里 -ListOnly 与「无需更新」都已 exit，开始真正写盘：目标版本目录不存在则新建
+if ($targetIsNew) { New-Item -ItemType Directory -Path $Target -Force | Out-Null }
 
 # 目标 lib\ 子目录可能不存在（新建空版本目录时），先确保它存在再拷 dll
 $libDir = Join-Path $Target 'lib'
@@ -194,10 +266,16 @@ if (-not (Test-Path -LiteralPath $libDir)) { New-Item -ItemType Directory -Path 
 # 先备份将被覆盖的旧文件（检测 2）。备份目标含子路径（lib\）时须先建父目录——
 # Copy-Item 不会自动创建多级目标目录；任一备份失败即中止，不覆盖任何文件。
 $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) ('cct-sync-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+$backupNeeded = $false
 $backupFails = [System.Collections.Generic.List[string]]::new()
 foreach ($f in $toChange) {
     if (Test-Path -LiteralPath $f.Dst) {
+        # 延迟创建：只有真有旧文件要备份时才建目录——升版本后首次同步目标目录是空的，
+        # 不该留下一个空备份目录（CLAUDE.md 登记过的临时垃圾）
+        if (-not $backupNeeded) {
+            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+            $backupNeeded = $true
+        }
         $bakPath = Join-Path $backupDir $f.Name
         $bakDir  = Split-Path -Parent $bakPath
         try {
@@ -213,7 +291,11 @@ if ($backupFails.Count -gt 0) {
     $backupFails | ForEach-Object { Write-Host "  $_" }
     exit 1
 }
-Write-Host "已备份将被覆盖的旧文件到: $backupDir"
+if ($backupNeeded) {
+    Write-Host "已备份将被覆盖的旧文件到: $backupDir"
+} else {
+    Write-Host '目标目录是新建的，没有旧文件需要备份。'
+}
 Write-Host ''
 
 # 逐文件覆盖，单个失败不中断（检测 3）
@@ -233,7 +315,7 @@ if ($failed.Count -gt 0) {
     Write-Host "有 $($failed.Count) 个文件覆盖失败——多半是仍有程序占用目标文件（其他终端的 cct / 杀软实时扫描）：$($failed -join ', ')" -ForegroundColor Yellow
     Write-Host '请关闭所有运行 cct 的终端（或先 Remove-Module ClaudeCodeTask）后重新运行本脚本。'
     Write-Host '注意：本次覆盖不完整，安装副本可能处于新旧混杂状态，修复前请勿在新终端运行 cct。' -ForegroundColor Yellow
-    Write-Host "已覆盖部分的旧文件备份仍在：$backupDir"
+    if ($backupNeeded) { Write-Host "已覆盖部分的旧文件备份仍在：$backupDir" }
     exit 1
 }
 
@@ -253,7 +335,11 @@ $smokeScript = $smokeScript.Replace('__PSM1__', $psm1Path).Replace('__SENTINEL__
 if ($LASTEXITCODE -ne 0) {
     Write-Host ''
     Write-Host '烟测失败：全新 pwsh 导入安装副本报错（详见上方输出），安装副本可能不完整或损坏。' -ForegroundColor Red
-    Write-Host "覆盖前的旧文件备份在：$backupDir —— 可将备份文件拷回安装副本还原，或修复源码后重新同步。"
+    if ($backupNeeded) {
+        Write-Host "覆盖前的旧文件备份在：$backupDir —— 可将备份文件拷回安装副本还原，或修复源码后重新同步。"
+    } else {
+        Write-Host '本次是新建版本目录，没有旧文件可还原；修复源码后重新同步即可。'
+    }
     exit 1
 }
 Write-Host '烟测通过：安装副本在全新终端可正常加载并扫描。'
@@ -268,3 +354,6 @@ if (Invoke-CctHotReload) {
     $newManifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Target 'ClaudeCodeTask.psd1')
     Write-HotReloadBlocked -Version ([string]$newManifest.ModuleVersion)
 }
+
+# 检测 9：收尾自清
+Invoke-CctSyncCleanup -TargetDir $Target -SrcDir $srcDir

@@ -6,6 +6,7 @@
 
 BeforeAll {
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Config.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask.UI\Data.ps1"     # 第二十三轮：Get-CctDirDeletePlan 读标题走 Read-CctSessionFile
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Clear.ps1"
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Command.ps1"
 
@@ -265,5 +266,91 @@ Describe '路由与帮助（clear 是命令式指令）' {
     }
     It 'Parse 拒绝 clear 不认识的选项（不被共享层静默接受）' {
         { Parse-CctClearArgs @('-cc', '--json') } | Should -Throw
+    }
+}
+
+Describe '选择器删除支持：Get-CctDirDeletePlan / Test-CctDirInUse / Remove-CctDirToRecycleBin（第二十三轮）' {
+    BeforeAll {
+        $script:dRoot = Join-Path $env:TEMP ("cct_dirplan_" + [guid]::NewGuid().ToString('N'))
+        $script:dEnc = Join-Path $script:dRoot 'E---taskX---'
+        $script:dSess = Join-Path $script:dEnc 'aaaa1111'      # 某会话的附属目录
+        $script:dMem = Join-Path $script:dEnc 'memory'
+        New-Item -ItemType Directory -Force $script:dEnc, $script:dSess, $script:dMem | Out-Null
+
+        $bs = [string][char]92
+        $script:cwdJson = 'E:\t\taskX'.Replace($bs, $bs + $bs)
+
+        function New-PlanJsonl {
+            param([string]$Sid, [string]$Title, [int]$Msgs, [string]$Ts, [datetime]$Mod)
+            $lines = [System.Collections.Generic.List[string]]::new()
+            if ($Title) { $lines.Add(('{"type":"custom-title","customTitle":"' + $Title + '","sessionId":"' + $Sid + '"}')) }
+            for ($i = 1; $i -le $Msgs; $i++) {
+                $lines.Add(('{"type":"user","cwd":"' + $script:cwdJson + '","timestamp":"' + $Ts + '","message":{"role":"user","content":"m' + $i + '"},"uuid":"u' + $i + '","parentUuid":null}'))
+            }
+            $p = Join-Path $script:dEnc "$Sid.jsonl"
+            [System.IO.File]::WriteAllLines($p, $lines, [System.Text.UTF8Encoding]::new($false))
+            [System.IO.File]::SetLastWriteTime($p, $Mod)      # 显式设定，供排序断言
+        }
+        New-PlanJsonl 'aaaa1111' '会话甲' 5 '2026-09-10T10:00:00.000Z' ([datetime]'2026-09-10 10:00')
+        New-PlanJsonl 'bbbb2222' '会话乙' 5 '2026-09-15T10:00:00.000Z' ([datetime]'2026-09-15 10:00')
+        New-PlanJsonl 'cccc3333' $null   3 '2026-09-12T10:00:00.000Z' ([datetime]'2026-09-12 10:00')   # 无标题
+        New-PlanJsonl 'agent-zzz' '子会话' 2 '2026-09-16T10:00:00.000Z' ([datetime]'2026-09-16 10:00')  # agent → 不进清单
+        [System.IO.File]::WriteAllLines((Join-Path $script:dEnc 'journal.jsonl'), @('{"type":"workflow"}'), [System.Text.UTF8Encoding]::new($false))
+        # 附属目录与 memory 各放点内容，验证 TotalSize 覆盖整目录
+        [System.IO.File]::WriteAllText((Join-Path $script:dMem 'm1.md'), ('x' * 1000))
+        [System.IO.File]::WriteAllText((Join-Path $script:dSess 'sub.jsonl'), ('y' * 2000))
+
+        function Get-Plan { Get-CctDirDeletePlan -ProjectDir $script:dEnc }
+    }
+    AfterAll {
+        if (Test-Path -LiteralPath $script:dRoot) { Remove-Item -LiteralPath $script:dRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    It 'Sessions 只列真会话：agent-* 与 journal.jsonl 计入 OtherCount 但不进清单' {
+        $plan = Get-Plan
+        $plan.SessionCount | Should -Be 3
+        $plan.OtherCount | Should -Be 2
+        @($plan.Sessions | ForEach-Object Sid8) | Should -Not -Contain 'agent-zz'
+    }
+    It 'Sessions 按最后写入降序（最近动过的排最前，确认屏照此顺序展示）' {
+        $plan = Get-Plan
+        @($plan.Sessions | ForEach-Object Sid8) | Should -Be @('bbbb2222', 'cccc3333', 'aaaa1111')
+    }
+    It '无标题会话显示为「(未命名)」，Sid8 取会话 id 前 8 位' {
+        $plan = Get-Plan
+        $c = $plan.Sessions | Where-Object Sid8 -eq 'cccc3333'
+        $c.Title | Should -Be '(未命名)'
+        $plan.Sessions[0].Sid8 | Should -Be 'bbbb2222'
+    }
+    It 'TotalSize 覆盖整目录（含附属目录与 memory，不只是清单里的 jsonl）' {
+        # 三个 jsonl 合计远小于 3000 字节，另加 memory 1000 + 附属 2000
+        (Get-Plan).TotalSize | Should -BeGreaterThan 2500
+    }
+    It '目录不存在：Exists=false、清单为空、不判占用' {
+        $p = Get-CctDirDeletePlan -ProjectDir (Join-Path $script:dRoot '不存在')
+        $p.Exists | Should -BeFalse
+        $p.SessionCount | Should -Be 0
+        $p.InUse | Should -BeFalse
+        $p.TotalSize | Should -Be 0
+    }
+    It 'Test-CctDirInUse：jsonl 被独占打开时判定为占用，释放后恢复可用' {
+        (Test-CctDirInUse -ProjectDir $script:dEnc) | Should -BeFalse
+        $fs = [System.IO.File]::Open((Join-Path $script:dEnc 'aaaa1111.jsonl'), 'Open', 'ReadWrite', 'None')
+        try {
+            (Test-CctDirInUse -ProjectDir $script:dEnc) | Should -BeTrue
+        } finally { $fs.Close() }
+        (Test-CctDirInUse -ProjectDir $script:dEnc) | Should -BeFalse
+    }
+    It 'Remove-CctDirToRecycleBin：目录进回收站、调用成功、原路径消失（用独立小目录，不动共享 fixture）' {
+        $tmpDir = Join-Path $script:dRoot 'delme'
+        New-Item -ItemType Directory -Force $tmpDir | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $tmpDir 'a.jsonl'), '{}')
+        $res = Remove-CctDirToRecycleBin -ProjectDir $tmpDir
+        $res.Ok | Should -BeTrue
+        (Test-Path -LiteralPath $tmpDir) | Should -BeFalse
+    }
+    It 'Remove-CctDirToRecycleBin：目录已不存在时视为成功（幂等，不报错）' {
+        $res = Remove-CctDirToRecycleBin -ProjectDir (Join-Path $script:dRoot '从不存在')
+        $res.Ok | Should -BeTrue
     }
 }

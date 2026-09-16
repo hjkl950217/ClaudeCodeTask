@@ -8,6 +8,14 @@
 
 $script:CctEsc = [char]27
 
+# 版权行左侧显示的版本号：从模块清单 psd1 读取（不写死；发版只需改 build-metadata.json，
+# 盖章后 psd1 跟随，这里自然跟着变）。读失败时留空，版权行退化为原来的 by … 文案。
+$script:CctVersionLabel = ''
+try {
+    $cctManifest = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'ClaudeCodeTask.psd1') -ErrorAction Stop
+    if ($cctManifest.ModuleVersion) { $script:CctVersionLabel = "v$($cctManifest.ModuleVersion)" }
+} catch { }
+
 # stdin 控制台模式管理（第六轮根因修复，2026-09-01 探针实锤）：
 #   stdin 带 ENABLE_VIRTUAL_TERMINAL_INPUT(0x0200) 时 [Console]::ReadKey 把方向键拆成
 #   ESC/'['/'C' 三个普通字符（Key=None）——方向键导航失效 + '[C[C[D' 污染 query、
@@ -46,13 +54,113 @@ function Enter-CctInputMode {
 # ANSI 剥离（计算纯文本宽度用）
 $script:CctAnsiPattern = "$([char]27)\[[0-9;?]*[a-zA-Z]"
 
-# 版权文字按可用显示宽分档：完整 → 缩短 → 极短 → 省略（终端窗口缩窄时渐进隐藏，不挤压左侧按键提示）
+# 版权文字按可用显示宽分档：完整 → 缩短 → 只剩版本号 → 省略（窗口缩窄时渐进隐藏，
+# 不挤压左侧按键提示）。按 Get-DisplayWidth 逐档实测宽度而非写死阈值——版本号长度会变
+# （0.3.3 → 0.10.0），写死阈值将来会算错。
 function Get-CctCopyright {
     param([int]$AvailWidth)   # 版权文字可用显示宽 = 窗口宽 - 帮助行左侧按键提示宽 - 间隔
-    if ($AvailWidth -ge 20) { return 'by github - hjkl950217' }
-    if ($AvailWidth -ge 9)  { return 'by github' }
-    if ($AvailWidth -ge 2)  { return 'by' }
+    $ver = [string]$script:CctVersionLabel
+    foreach ($cand in @(
+        "$ver by github - hjkl950217",
+        "$ver by github",
+        "$ver"
+    )) {
+        $text = $cand.Trim()
+        if ($text -and (Get-DisplayWidth $text) -le $AvailWidth) { return $text }
+    }
     return ''
+}
+
+# 删除确认屏（纯函数，供 New-CctFrame 分派；也可单独断言）。
+# 布局沿用固定栏位约定：帧高恒 = WindowHeight、末行恒为按键提示行、每行显示宽 ≤ WindowWidth。
+# 清单列宽全部按显示宽（Get-DisplayWidth）算——不用 \t：终端制表位按字符数推进，
+# 中文占 2 列必然错位，且不同终端 tab stop 不一致。
+function New-CctConfirmFrame {
+    param(
+        [pscustomobject]$Confirm,   # { TaskPath, ProjectDir, Plan, Scroll }
+        [int]$WindowWidth,
+        [int]$WindowHeight,
+        [datetime]$Now
+    )
+    $esc = $script:CctEsc
+    $cReset = "$esc[0m"; $cDim = "$esc[90m"; $cWarn = "$esc[91m"
+
+    $plan = $Confirm.Plan
+    $rows = [System.Collections.Generic.List[string]]::new()
+
+    # 固定段（标题 / 空 / 目录 / 位置 / 汇总 / 空）；窗口极矮时从后往前裁，保证不超帧高
+    $fixed = [System.Collections.Generic.List[string]]::new()
+    $fixed.Add($cWarn + (Truncate-Display ' 删除会话历史（删除后进入回收站，可在回收站还原）' $WindowWidth) + $cReset)
+    $fixed.Add('')
+    $fixed.Add($cDim + (Truncate-Display (" 目录：" + [string]$Confirm.TaskPath) $WindowWidth) + $cReset)
+    $fixed.Add($cDim + (Truncate-Display (" 位置：" + [string]$Confirm.ProjectDir) $WindowWidth) + $cReset)
+    $extra = if ($plan.OtherCount -gt 0) { "，另含 $($plan.OtherCount) 个附属会话文件" } else { '' }
+    $summary = " 将删除该目录下全部 $($plan.SessionCount) 个会话（约 $(Format-CctBytes -Bytes $plan.TotalSize)），含记忆文件夹$extra"
+    $fixed.Add((Truncate-Display $summary $WindowWidth))
+    $fixed.Add('')
+    $maxFixed = [Math]::Max(1, $WindowHeight - 1)
+    while ($fixed.Count -gt $maxFixed) { $fixed.RemoveAt($fixed.Count - 1) }
+    foreach ($f in $fixed) { $rows.Add($f) }
+
+    # 清单区：固定段之后到末行之前
+    $capacity = [Math]::Max(0, $WindowHeight - 1 - $rows.Count)
+
+    # 列宽预算：缩进 2 + sid 8 + 三个 2 空格间隔 + 时间 11 + 大小 10；标题列吃剩余
+    $indent = 2; $sidW = 8; $timeW = 11; $sizeW = 10; $sep = 2
+    $minTitle = 8
+    $showTime = $true; $showSize = $true
+    $titleBudget = $WindowWidth - ($indent + $sidW + $sep + $sep + $timeW + $sep + $sizeW)
+    if ($titleBudget -lt $minTitle) {
+        $showSize = $false                                   # 窄窗降级 1：去掉大小列
+        $titleBudget = $WindowWidth - ($indent + $sidW + $sep + $sep + $timeW)
+        if ($titleBudget -lt $minTitle) {
+            $showTime = $false                               # 窄窗降级 2：再去掉时间列
+            $titleBudget = $WindowWidth - ($indent + $sidW + $sep)
+        }
+    }
+    # 标题列取「本批最长标题」与预算的较小值（短标题时更紧凑），下限 $minTitle；
+    # 预算本身更小时以预算为准（宁可截断也不越界）
+    $longest = 0
+    foreach ($s in $plan.Sessions) {
+        $tw = Get-DisplayWidth $s.Title
+        if ($tw -gt $longest) { $longest = $tw }
+    }
+    $titleW = $titleBudget
+    if ($titleW -gt $minTitle) { $titleW = [Math]::Min($titleW, [Math]::Max($minTitle, $longest)) }
+
+    $total = $plan.Sessions.Count
+    $scroll = [Math]::Max(0, [int]$Confirm.Scroll)
+    if ($scroll -ge $total -and $total -gt 0) { $scroll = $total - 1 }
+    $shown = [Math]::Min($capacity, [Math]::Max(0, $total - $scroll))
+    $hasMore = ($scroll + $shown) -lt $total
+    if ($hasMore -and $shown -gt 0) { $shown-- }             # 末尾留一行给「还有 N 个」提示
+
+    for ($i = 0; $i -lt $capacity; $i++) {
+        if ($i -lt $shown) {
+            $s = $plan.Sessions[$scroll + $i]
+            $line = ' ' * $indent + (Pad-DisplayRight $s.Sid8 $sidW) + (' ' * $sep) +
+                    (Pad-DisplayRight (Truncate-Display $s.Title $titleW) $titleW)
+            if ($showTime) { $line += (' ' * $sep) + (Pad-DisplayLeft $s.LastWrite.ToString('MM-dd HH:mm') $timeW) }
+            if ($showSize) { $line += (' ' * $sep) + (Pad-DisplayLeft (Format-CctBytes -Bytes $s.Size) $sizeW) }
+            $rows.Add($line)
+        } elseif ($i -eq $shown -and $hasMore) {
+            $rows.Add($cDim + (' ' * $indent + "…还有 $($total - $scroll - $shown) 个（↑↓ 滚动）") + $cReset)
+        } elseif ($i -eq 0 -and $total -eq 0) {
+            $rows.Add($cDim + (' ' * $indent + '（该目录下没有会话文件）') + $cReset)
+        } else {
+            $rows.Add('')
+        }
+    }
+
+    # 填满到末行前 + 末行按键提示（帧高恒 = WindowHeight）
+    while ($rows.Count -lt $WindowHeight - 1) { $rows.Add('') }
+    # 末行按键提示：确认段红色（危险动作）、取消段与主界面按键提示同为暗灰；
+    # 两段各自截断——确认段先占宽，取消段吃剩余，剩余不足则整段丢弃，保证不越界
+    $hintDel = Truncate-Display ' y/d/回车 确认删除' $WindowWidth
+    $hintCancelW = $WindowWidth - (Get-DisplayWidth $hintDel)
+    $hintCancel = if ($hintCancelW -gt 0) { Truncate-Display '    n/Esc 取消' $hintCancelW } else { '' }
+    $rows.Add($cWarn + $hintDel + $cDim + $hintCancel + $cReset)
+    return $rows.ToArray()
 }
 
 # 生成整帧行数组（不写控制台）
@@ -62,14 +170,22 @@ function New-CctFrame {
     param(
         [pscustomobject[]]$Tasks, [int]$SelectedIndex, [string]$Query,
         [int]$WindowWidth, [int]$WindowHeight, [datetime]$Now,
-        [int]$TotalCount = $Tasks.Count      # 过滤后的 M/N 里 N = 过滤前总数
+        [int]$TotalCount = $Tasks.Count,     # 过滤后的 M/N 里 N = 过滤前总数
+        [pscustomobject]$Confirm = $null,    # 删除确认屏数据（非空 → 整帧走确认屏渲染）
+        [string]$Notice = $null,             # 一次性结果提示（放搜索框右侧计数位，下次按键时清除）
+        [bool]$NoticeIsError = $false        # 提示是否用错误样式（红）显示
     )
     $esc = $script:CctEsc
     $cReset = "$esc[0m"; $cDim = "$esc[90m"; $cSel = "$esc[96m"   # 选中：亮青文字（反馈 4，替代整卡反色 ESC[7m）
+    $cWarn = "$esc[91m"; $cOk = "$esc[92m"
+
+    if ($Confirm) { return (New-CctConfirmFrame -Confirm $Confirm -WindowWidth $WindowWidth -WindowHeight $WindowHeight -Now $Now) }
 
     $rows = [System.Collections.Generic.List[string]]::new()
 
     # ---- 行 0：搜索行（计数紧跟搜索框右侧，决策 47；第八轮 3：占位文案）----
+    # 搜索框恒定显示：一次性结果提示（删除成功/失败）占「计数」的位置放在右侧，
+    # 不覆盖搜索框——删完立刻能继续输入与翻页，不必先按键清掉一屏提示
     $leftPlain = '搜索: ['
     $left = '搜索: ['
     if ([string]::IsNullOrEmpty($Query)) {
@@ -80,9 +196,19 @@ function New-CctFrame {
         $left += $Query
     }
     $leftPlain += ']'; $left += ']'
-    # 计数：无过滤「共 N 项」，有过滤「M/N」——紧跟在 ] 后（不再右对齐到行尾）
-    $right = if ([string]::IsNullOrEmpty($Query)) { " 共 $TotalCount 项" } else { " $($Tasks.Count)/$TotalCount" }
-    $rows.Add($left + $cDim + $right + $cReset)
+    $right = ''
+    $rightColor = $cDim
+    if ($Notice) {
+        # 按剩余宽度截断，保证整行不越界
+        $budget = [Math]::Max(1, $WindowWidth - (Get-DisplayWidth $leftPlain) - 2)
+        $right = ' ' + (Truncate-Display $Notice $budget)
+        $rightColor = if ($NoticeIsError) { $cWarn } else { $cOk }
+    } elseif ([string]::IsNullOrEmpty($Query)) {
+        $right = " 共 $TotalCount 项"                # 计数：无过滤「共 N 项」
+    } else {
+        $right = " $($Tasks.Count)/$TotalCount"      # 有过滤「M/N」
+    }
+    $rows.Add($left + $rightColor + $right + $cReset)
 
     $rows.Add('')   # 空行
 
@@ -175,11 +301,14 @@ function New-CctFrame {
 
     # 帮助行恒在末行 → 行号稳定 = 帮助行永远在屏幕最后一行
     # 左侧按键提示 + 右侧居右淡色版权（版权按宽度分档，窗口缩窄时渐进省略）
-    $help = '  ↑↓←→ 选择   回车 启动   Esc 取消'
+    # 提示先截断到窗宽：加「d 删除」后提示变长，窄窗口下提示本身就可能超宽；
+    # 版权只在「提示 + 版权」整体放得下时才拼（宁可少版权也不越界）
+    $help = Truncate-Display '  ↑↓←→ 选择   回车 启动   d 删除   Esc 取消' $WindowWidth
     $helpW = Get-DisplayWidth $help
     $copy = Get-CctCopyright ($WindowWidth - $helpW - 2)   # 2 = 与提示的最小间隔空格
-    if ($copy) {
-        $rows.Add($cDim + $help + (' ' * ($WindowWidth - $helpW - (Get-DisplayWidth $copy))) + $copy + $cReset)
+    $copyW = if ($copy) { Get-DisplayWidth $copy } else { 0 }
+    if ($copyW -gt 0 -and ($helpW + $copyW) -le $WindowWidth) {
+        $rows.Add($cDim + $help + (' ' * ($WindowWidth - $helpW - $copyW)) + $copy + $cReset)
     } else {
         $rows.Add($cDim + $help + $cReset)
     }
@@ -218,6 +347,22 @@ function Write-CctFrame {
     if ($sb.Length -gt 0) { [Console]::Write($sb.ToString()) }
 }
 
+# 构造删除确认屏数据（读盘列清单，供主循环按 d/Delete 时调用）。
+# 返回 { Confirm } 或 { Error }——错误走一次性提示，不进确认态。
+function New-CctDeleteConfirm {
+    param([pscustomobject]$Task)
+
+    if (-not $Task.ProjectDir) { return [pscustomobject]@{ Error = '该项缺少会话目录信息，无法删除' } }
+    $plan = Get-CctDirDeletePlan -ProjectDir $Task.ProjectDir
+    if (-not $plan.Exists) { return [pscustomobject]@{ Error = '会话目录已不存在，无需删除' } }
+    return [pscustomobject]@{ Confirm = [pscustomobject]@{
+        TaskPath   = $Task.GroupKey
+        ProjectDir = $Task.ProjectDir
+        Plan       = $plan
+        Scroll     = 0
+    } }
+}
+
 # 主循环（决策 7/24/31/43/45；KeySource 可注入供测试，生产用轮询读键）
 function Show-CctSelector {
     param(
@@ -235,8 +380,21 @@ function Show-CctSelector {
 
     $query = $InitialQuery
     $selected = 0
+    $confirm = $null        # 非空 = 删除确认态（{ TaskPath, ProjectDir, Plan, Scroll }）
+    $notice = $null         # 一次性结果提示（显示在搜索框右侧，按键时清除）
+    $noticeIsError = $false # 提示样式：错误=红，成功=绿
     $script:CctLastRows = @()
     $result = $null
+
+    # 进入删除确认态（d / Delete 两个入口共用）。构造失败（缺目录信息/目录已不在）
+    # 降级为一次性提示，不进确认态。用 dot-source 调用以读写外层变量。
+    $openConfirm = {
+        if ($filtered.Count -gt 0) {
+            $r = New-CctDeleteConfirm -Task $filtered[$selected]
+            if ($r.Error) { $notice = $r.Error; $noticeIsError = $true }
+            else { $confirm = $r.Confirm }
+        }
+    }
 
     # 生产模式：进备用屏幕 + 隐藏光标（发现 11）。测试模式（KeySource 注入）跳过控制台操作
     $interactive = $null -eq $KeySource
@@ -255,7 +413,7 @@ function Show-CctSelector {
             if ($selected -ge $filtered.Count) { $selected = [Math]::Max(0, $filtered.Count - 1) }
             # 列数随当前宽度计算（resize 后 $w 已更新，这里驱动 ↑↓ 跳列；边框卡按 36 算）
             $cols = [Math]::Min(3, [Math]::Max(1, [int][Math]::Floor($w / 36)))
-            $frame = @(New-CctFrame $filtered $selected $query $w $h ([datetime]::Now) $total)
+            $frame = @(New-CctFrame $filtered $selected $query $w $h ([datetime]::Now) $total $confirm $notice $noticeIsError)
             if ($interactive) { Write-CctFrame $frame }   # 测试模式不写控制台
             # 读键：生产模式用 KeyAvailable 轮询以检测终端 resize；测试模式直接调 KeySource
             if ($KeySource) {
@@ -286,6 +444,53 @@ function Show-CctSelector {
             if ($null -eq $key) { return $null }           # 序列耗尽 = 取消
             # Ctrl+C 取消
             if ($key.Key -eq [ConsoleKey]::C -and ($key.Modifiers -band [System.ConsoleModifiers]::Control)) { return $null }
+
+            # 一次性结果提示：本次按键先清掉旧提示，但按键照常处理——
+            # 删完立刻处于正常操作状态，不必先按一下把提示按掉
+            if ($notice) { $notice = $null; $noticeIsError = $false }
+
+            # 删除确认态：y/回车 执行，n/Esc 取消，↑↓ 滚动清单，其余键一律无效
+            # （不做「其他键取消」——用户可能想滚动看完清单再决定，误触不该有后果）
+            if ($confirm) {
+                $doDelete = $false
+                switch ($key.Key) {
+                    ([ConsoleKey]::UpArrow)   { if ($confirm.Scroll -gt 0) { $confirm.Scroll-- } }
+                    ([ConsoleKey]::DownArrow) {
+                        $maxScroll = [Math]::Max(0, @($confirm.Plan.Sessions).Count - 1)
+                        if ($confirm.Scroll -lt $maxScroll) { $confirm.Scroll++ }
+                    }
+                    ([ConsoleKey]::Escape)    { $confirm = $null }
+                    ([ConsoleKey]::Enter)     { $doDelete = $true }
+                    ([ConsoleKey]::Y)         { $doDelete = $true }
+                    ([ConsoleKey]::D)         { $doDelete = $true }   # 与「d 进确认」同键，连按两下即删
+                    ([ConsoleKey]::N)         { $confirm = $null }
+                }
+                if ($doDelete -and $confirm) {
+                    $target = $confirm
+                    # 删前再探一次占用（构造确认屏到此刻之间用户可能开了会话）：
+                    # 既给明确提示，也避开删除 API 在错误路径上的系统对话框
+                    if (Test-CctDirInUse -ProjectDir $target.ProjectDir) {
+                        $notice = '该目录有会话正在使用，请先退出那个会话再删'
+                        $noticeIsError = $true
+                    } else {
+                        $res = Remove-CctDirToRecycleBin -ProjectDir $target.ProjectDir
+                        if ($res.Ok) {
+                            $notice = '删除成功'      # 简短提示，不挡操作
+                            $noticeIsError = $false
+                            # 该目录的全部卡片一起消失（同一 GroupKey 可能有多个命名会话卡）
+                            $Tasks = @($Tasks | Where-Object { $_.GroupKey -ne $target.TaskPath })
+                            $total = @($Tasks).Count
+                            $selected = 0
+                        } else {
+                            $notice = "删除失败：$($res.Message)"
+                            $noticeIsError = $true
+                        }
+                    }
+                    $confirm = $null
+                }
+                continue
+            }
+
             switch ($key.Key) {
                 ([ConsoleKey]::LeftArrow)  { $selected = [Math]::Max(0, $selected - 1) }
                 ([ConsoleKey]::RightArrow) { $selected = [Math]::Min($filtered.Count - 1, $selected + 1) }
@@ -297,9 +502,13 @@ function Show-CctSelector {
                 }
                 ([ConsoleKey]::Escape)     { return $null }
                 ([ConsoleKey]::Backspace)  { if ($query.Length -gt 0) { $query = $query.Substring(0, $query.Length - 1) } }
+                ([ConsoleKey]::Delete)     { . $openConfirm }
                 default {
                     $ch = $key.KeyChar
-                    if ($ch -ge [char]0x20 -and $ch -ne [char]0x7F) { $query += $ch }
+                    # d 与删除键兼用：搜索框为空时按 d 进删除确认（顺手），已输入搜索词时
+                    # d 照常进输入框（否则搜不了含 d 的关键词），要删就按 Delete
+                    if ($key.Key -eq [ConsoleKey]::D -and [string]::IsNullOrEmpty($query)) { . $openConfirm }
+                    elseif ($ch -ge [char]0x20 -and $ch -ne [char]0x7F) { $query += $ch }
                 }
             }
         }

@@ -267,3 +267,83 @@ function Invoke-CctClear {
     Write-Host "已删除 $($res.Deleted) 项，释放约 $(Format-CctBytes -Bytes $res.Bytes)。"
     if ($res.Failed -gt 0) { Write-Host "有 $($res.Failed) 项删除失败（请手动检查）。" }
 }
+
+# ---- 选择器内「删除该目录全部会话」（第二十三轮）----
+# 与上方 cct clear -cc 的全库按行数判定刻意分离：这里只处理用户在列表里点名的那一个
+# 编码目录，不做保留/阈值判断——所见即所删，整个编码目录一起清
+# （含全部 jsonl、各会话的附属目录、memory 记忆文件夹）。
+# 走 Windows 回收站而非永久删除，误删可还原；cct clear -cc 仍维持永久删除不改。
+
+# 目录占用探测：任一 jsonl 无法独占打开 → CC 正开着该目录的会话，判定为占用中。
+# 既给用户明确提示，也避开删除 API 在错误路径上的系统对话框
+# （cct 跑在备用屏幕里，任何 GUI 弹窗都会破坏界面）。
+function Test-CctDirInUse {
+    param([string]$ProjectDir)
+    try {
+        foreach ($f in [System.IO.Directory]::EnumerateFiles($ProjectDir, '*.jsonl')) {
+            try { ([System.IO.File]::Open($f, 'Open', 'ReadWrite', 'None')).Close() }
+            catch { return $true }
+        }
+    } catch { }
+    return $false
+}
+
+# 待删清单（纯函数，只读不写盘）。Sessions 只列「真会话」（排除 agent-* / journal.jsonl，
+# 与数据层口径一致），OtherCount 记录被排除的附属 jsonl 数；TotalSize 是整目录实际占用
+# （含 memory 与全部子目录），与「删掉后能腾出多少」一致。
+function Get-CctDirDeletePlan {
+    param([string]$ProjectDir)
+
+    $sessions = [System.Collections.Generic.List[object]]::new()
+    $otherCount = 0
+    $exists = [System.IO.Directory]::Exists($ProjectDir)
+    if ($exists) {
+        foreach ($f in [System.IO.Directory]::EnumerateFiles($ProjectDir, '*.jsonl')) {
+            $name = [System.IO.Path]::GetFileName($f)
+            if ($name -like 'agent-*' -or $name -eq 'journal.jsonl') {
+                $otherCount++      # 附属 jsonl（子会话/工作流日志）：计数但不进清单，与数据层口径一致
+            } else {
+                $rec = Read-CctSessionFile -Path $f
+                $sid = $name -replace '\.jsonl$', ''
+                $sessions.Add([pscustomobject]@{
+                    Sid8      = $sid.Substring(0, [Math]::Min(8, $sid.Length))
+                    Title     = if ($rec.Title) { [string]$rec.Title } else { '(未命名)' }
+                    LastWrite = [System.IO.File]::GetLastWriteTime($f)
+                    Size      = [System.IO.FileInfo]::new($f).Length
+                })
+            }
+        }
+    }
+    $ordered = @($sessions | Sort-Object LastWrite -Descending)
+    return [pscustomobject]@{
+        Dir          = $ProjectDir
+        Exists       = $exists
+        InUse        = if ($exists) { Test-CctDirInUse -ProjectDir $ProjectDir } else { $false }
+        Sessions     = $ordered
+        SessionCount = $ordered.Count
+        OtherCount   = $otherCount
+        TotalSize    = Get-CctCleanupSize -Path $ProjectDir
+    }
+}
+
+# 删除整个编码目录（走 Windows 回收站，可在回收站还原）。返回 { Ok, Message }。
+# 实测（2026-09-16）：pwsh 7 主线程 ApartmentState = STA，
+# DeleteDirectory + SendToRecycleBin 正常返回、不弹 GUI 对话框。
+# 注意回收站有容量配额（默认约为所在磁盘的一成），超配额时系统直接永久删除
+# （同资源管理器行为），确认屏显示的总体积可用于判断量级。
+function Remove-CctDirToRecycleBin {
+    param([string]$ProjectDir)
+    if (-not [System.IO.Directory]::Exists($ProjectDir)) {
+        return [pscustomobject]@{ Ok = $true; Message = '目录已不存在' }
+    }
+    try {
+        if (-not ('Microsoft.VisualBasic.FileIO.FileSystem' -as [type])) { Add-Type -AssemblyName Microsoft.VisualBasic }
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+            $ProjectDir,
+            [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+            [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+        return [pscustomobject]@{ Ok = $true; Message = '' }
+    } catch {
+        return [pscustomobject]@{ Ok = $false; Message = $_.Exception.Message }
+    }
+}

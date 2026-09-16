@@ -37,6 +37,16 @@
 #   - 聚合层新增「续接分叉折叠」：同目录内后代达标时折叠祖先（对话链只留最新端点）；
 #     「目录升格」：纯碎片目录（无任何合格会话）把「有标题且 ≥1 真实消息」的最新碎片
 #     升格为会话卡（豁免阈值，精确 --resume），folder 头被既有逻辑滤除。
+# 第二十二轮修复（2026-09-16）：
+#   - 类名版本化 CctScannerV5 → CctScannerV6：输出 7→8 列，新增 lastUserMsgTs（最后一条
+#     真实用户输入的时间戳）。根因：会话文件被打开一次就会刷新 mtime/末条 timestamp——
+#     用 cct 进去看一眼再退出，哪怕一个字没打，该会话也被排成「最新」，卡片从此一直指向它，
+#     真正在用的新会话因未命名而进不了列表（用户反馈：同一目录换新会话后 cct 永远进旧的）。
+#     V6 同时收紧真实输入判定，堵住 `<` 开头（local-command-stdout 等终端回显）与
+#     "Continue from where you left off."（CC 恢复会话注入）两类漏网记录。
+#   - 聚合层新增「会话名继承」：目录内只有一个命名名、且存在「真实输入时间更晚」的合格
+#     未命名会话时，由该未命名会话顶替命名组出卡并沿用该名字（只改展示，不写 jsonl）。
+#     缓存 version 2→3（raw 7→8 列）。
 
 # 文件数拐点：达到该值且缓存可用才走增量路径（测试可覆盖该 script 变量）
 $script:CctCacheMinFiles = 20
@@ -47,7 +57,7 @@ $script:CctTitleKindMap = @{ 'custom' = 'userCustom'; 'ai' = 'aiGenerate' }
 
 # C# 扫描器已独立到 ClaudeCodeTask.Core（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）。
 # 类名版本化约定保留：签名变更必须换名（V2→V3→V4→V5），Add-Type 类型缓存仍在进程 AppDomain。
-if (-not ('CctScannerV5' -as [type])) {
+if (-not ('CctScannerV6' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot 'lib\ClaudeCodeTask.Core.dll')
 }
 
@@ -76,6 +86,17 @@ function New-CctSessionRecord {
     # 第十九轮：第 7 列 ancestors（';' 分隔的祖先会话 id；空串 → 空数组）
     $ancestors = if ($Raw.Length -gt 6 -and $Raw[6]) { $Raw[6].Split(';') } else { @() }
 
+    # 第二十二轮：第 8 列 lastUserMsgTs（最后一条真实用户输入的时间；空串 → $null）。
+    # 与 LastTimestamp 的区别：后者是文件末条记录时间，打开一次就会被刷新，
+    # 不能用来判断「谁才是当前在用的会话」（见头部 V6 说明）。
+    $lastUserMsgTs = $null
+    if ($Raw.Length -gt 7 -and $Raw[7]) {
+        $parsed = [datetime]::MinValue
+        if ([datetime]::TryParse($Raw[7], [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$parsed)) {
+            $lastUserMsgTs = $parsed
+        }
+    }
+
     return [pscustomobject]@{
         SessionId      = $sessionId
         StartCwd       = if ($Raw[0]) { $Raw[0] } else { $null }   # 首现 cwd = 启动/存储目录
@@ -86,6 +107,10 @@ function New-CctSessionRecord {
         UserMsgs       = $userMsgs
         HasRealUserMsg = ($userMsgs -ge 1)
         Ancestors      = @($ancestors)
+        LastUserMsgTime = $lastUserMsgTs                            # 最后一条真实用户输入的时间
+        # jsonl 所在编码目录（~/.claude/projects/<编码名>）——选择器里删会话时按它定位。
+        # 目录名编码不可逆（中文/斜杠全变 '-'），无法从 StartCwd 反推，只能由文件路径带出
+        ProjectDir     = [System.IO.Path]::GetDirectoryName($Path)
     }
 }
 
@@ -96,31 +121,33 @@ function Read-CctSessionFile {
     $sessionId = [System.IO.Path]::GetFileNameWithoutExtension($Path)
     $raw = $null
     try {
-        $raw = [CctScannerV5]::ScanFile($Path)
+        $raw = [CctScannerV6]::ScanFile($Path)
     } catch {
         # 读取失败（文件被占用等）：返回空记录
         return [pscustomobject]@{
             SessionId = $sessionId; StartCwd = $null; Cwd = $null; LastTimestamp = $null
             Title = $null; TitleType = $null; UserMsgs = 0; HasRealUserMsg = $false; Ancestors = @()
+            LastUserMsgTime = $null; ProjectDir = [System.IO.Path]::GetDirectoryName($Path)
         }
     }
 
     return New-CctSessionRecord $Path $raw
 }
 
-# 读取会话扫描缓存（结构: {version:2, files:{<path>:{mt:<ticks>, sz:<bytes>, raw:<string[7]>}}}）
-# 第十九轮 version 1→2（raw 6→7 列，旧缓存无 ancestors 列）；损坏/版本不符/不存在 →
-# 返回 $null（调用方回退全量扫描，旧缓存被新结构覆盖）
+# 读取会话扫描缓存（结构: {version:3, files:{<path>:{mt:<ticks>, sz:<bytes>, raw:<string[8]>}}}）
+# 第十九轮 version 1→2（raw 6→7 列，旧缓存无 ancestors 列）；第二十二轮 2→3（raw 7→8 列，
+# 旧缓存无 lastUserMsgTs 列）；损坏/版本不符/不存在 → 返回 $null（调用方回退全量扫描，
+# 旧缓存被新结构覆盖）
 function Read-CctSessionCache {
     param([string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     try {
         $obj = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
-        if ($null -eq $obj -or $obj.version -ne 2 -or $null -eq $obj.files) { return $null }
+        if ($null -eq $obj -or $obj.version -ne 3 -or $null -eq $obj.files) { return $null }
         $filesMap = @{}
         foreach ($prop in $obj.files.PSObject.Properties) { $filesMap[$prop.Name] = $prop.Value }
-        return @{ version = 2; files = $filesMap }
+        return @{ version = 3; files = $filesMap }
     } catch {
         return $null
     }
@@ -190,7 +217,7 @@ function Get-CctTasks {
             }
         }
         if ($dirty.Count -gt 0) {
-            $dirtyRaw = [CctScannerV5]::ScanAll([string[]]@($dirty), $degree)
+            $dirtyRaw = [CctScannerV6]::ScanAll([string[]]@($dirty), $degree)
             for ($d = 0; $d -lt $dirty.Count; $d++) {
                 $p = $dirty[$d]
                 $rawAll[$pathIndex[$p]] = $dirtyRaw[$d]
@@ -205,9 +232,9 @@ function Get-CctTasks {
         Write-CctSessionCache -Path $CachePath -Cache $cache
     } else {
         # 全量（无缓存或文件 < 拐点）；≥ 拐点且首次无缓存时写缓存供下次增量
-        $rawAll = [CctScannerV5]::ScanAll($paths, $degree)
+        $rawAll = [CctScannerV6]::ScanAll($paths, $degree)
         if ($paths.Count -ge $script:CctCacheMinFiles) {
-            $newCache = @{ version = 2; files = @{} }
+            $newCache = @{ version = 3; files = @{} }
             for ($i = 0; $i -lt $paths.Length; $i++) {
                 $cf = $files[$i]
                 $newCache.files[$paths[$i]] = [pscustomobject]@{ mt = $cf.LastWriteTimeUtc.Ticks; sz = $cf.Length; raw = $rawAll[$i] }
@@ -274,9 +301,43 @@ function Get-CctTasks {
                     LastActive = $q.LastTimestamp.ToLocalTime()
                     SessionId = $q.SessionId
                     GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=StartCwd（挂到存储目录文件夹下）
+                    ProjectDir = $q.ProjectDir                         # jsonl 所在编码目录（删除时定位用）
                 })
             }
         }
+
+        # 第二十二轮「会话名继承」：目录内只有一个命名名、且存在「真实输入时间更晚」的合格
+        # 未命名会话时，由该未命名会话顶替命名组出卡、沿用该名字（只改展示，不写 jsonl）。
+        # 根因：会话文件被打开一次就会刷新 mtime/末条 timestamp，用户进去看一眼再退出也会
+        # 让它永远排「最新」；真正在用的新会话往往没命名，旧逻辑下根本进不了列表。
+        # 触发条件刻意收紧，避免误伤：
+        #   ① 命名名唯一（多个名字 = 几个不相干任务，不合并）
+        #   ② 该命名名下有合格会话（否则交给既有「目录升格」兜底）
+        #   ③ 未命名会话里也有合格的，且最新那个的真实输入时间确实更晚
+        # 触发后该目录只出这一张卡；原命名会话不再单列（它的文件没被动过，用
+        # `cct run -i <会话id>` 仍可精准直达；若它重新被使用则真实输入时间变最新，卡片自动指回它）。
+        if ($manualGroups.Count -eq 1) {
+            $namedQualified = @($manualGroups[0].Group | Where-Object {
+                $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs -and $_.LastUserMsgTime })
+            $unnamedQualified = @($g.Group | Where-Object {
+                $_.TitleType -ne 'userCustom' -and $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs -and $_.LastUserMsgTime })
+            if ($namedQualified.Count -gt 0 -and $unnamedQualified.Count -gt 0) {
+                $namedLatest = ($namedQualified | Sort-Object LastUserMsgTime -Descending)[0]
+                $unnamedLatest = ($unnamedQualified | Sort-Object LastUserMsgTime -Descending)[0]
+                if ($unnamedLatest.LastUserMsgTime -gt $namedLatest.LastUserMsgTime) {
+                    $sessionItems.Clear()
+                    $sessionItems.Add([pscustomobject]@{
+                        Kind = 'Session'; Path = $unnamedLatest.Cwd; Name = $manualGroups[0].Name
+                        Subtitle = $null
+                        LastActive = $unnamedLatest.LastTimestamp.ToLocalTime()
+                        SessionId = $unnamedLatest.SessionId
+                        GroupKey = $folderPath; TitleType = '自定义命名'
+                        ProjectDir = $unnamedLatest.ProjectDir
+                    })
+                }
+            }
+        }
+
         if ($manualGroups.Count -eq 0) {
             # 保底自动项：目录无任何手动命名项（决策 36 原语义不变——手动项被阈值过滤不触发自动项顶替），
             # ≥MinUserMsgs 的 ai-title 里最新一个（决策 35/37；口径与决策 32 一致：≥）
@@ -288,6 +349,7 @@ function Get-CctTasks {
                     LastActive = $aiBig[0].LastTimestamp.ToLocalTime()
                     SessionId = $aiBig[0].SessionId
                     GroupKey = $folderPath; TitleType = '自动生成'
+                    ProjectDir = $aiBig[0].ProjectDir
                 })
             }
         }
@@ -307,6 +369,7 @@ function Get-CctTasks {
                     LastActive = $p.LastTimestamp.ToLocalTime()
                     SessionId = $p.SessionId
                     GroupKey = $folderPath; TitleType = if ($p.TitleType -eq 'userCustom') { '自定义命名' } else { '自动生成' }
+                    ProjectDir = $p.ProjectDir
                 })
             }
         }
@@ -317,6 +380,7 @@ function Get-CctTasks {
             Subtitle = $latest.Title
             LastActive = $latest.LastTimestamp.ToLocalTime()
             SessionId = $null; GroupKey = $folderPath; TitleType = $null
+            ProjectDir = $latest.ProjectDir
         }
         $items.Add($folderItem)
         foreach ($s in ($sessionItems | Sort-Object LastActive -Descending)) { $items.Add($s) }

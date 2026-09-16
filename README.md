@@ -53,9 +53,9 @@ Claude Code 任务文件夹选择器：一条命令列出所有 [Claude Code](ht
 
 *Tech highlights*
 
-- **预编译 C# 内核（ClaudeCodeTask.Core）**：性能关键路径由 C# 内核 dll 承担（`CctScannerV5` 并行读盘 + 增量缓存），PowerShell 只做类型转换，扫描提速约 24 倍
+- **预编译 C# 内核（ClaudeCodeTask.Core）**：性能关键路径由 C# 内核 dll 承担（`CctScannerV6` 并行读盘 + 增量缓存），PowerShell 只做类型转换，扫描提速约 24 倍
 
-  *Pre-compiled C# kernel (ClaudeCodeTask.Core): performance-critical paths run in the C# dll (`CctScannerV5` parallel disk scan + incremental cache), PowerShell only does type conversion — about 24x faster scanning.*
+  *Pre-compiled C# kernel (ClaudeCodeTask.Core): performance-critical paths run in the C# dll (`CctScannerV6` parallel disk scan + incremental cache), PowerShell only does type conversion — about 24x faster scanning.*
 - **并行扫描**：C# `Parallel.For` 并发读盘，无共享状态，单文件异常不中断整体
 
   *Parallel scan: C# `Parallel.For` reads the disk concurrently with no shared state; a single file error never aborts the whole run.*
@@ -242,6 +242,7 @@ cct clear -cc
 | Esc | 取消退出 |
 | 输入文字 | 实时过滤（中文需输入法提交后过滤） |
 | Backspace | 删除上一个过滤字符 |
+| `d` / `Delete` | 删除选中卡片对应的**整个目录**（含记忆文件夹与附属会话），进确认屏后 `y`/回车/`d` 执行、`n`/`Esc` 取消。删除走 Windows 回收站，可在回收站还原。搜索框有内容时 `d` 照常输入，要删就用 `Delete` |
 
 ## 配置
 
@@ -340,7 +341,8 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0.0; Invoke-Pes
 ├── .github/           # GitHub 集成（CI 测试 + PSGallery 发布工作流 + issue 模板）
 │   └── workflows/     ci.yml（push/PR 跑 Pester）+ publish.yml（release 发布到 PSGallery）
 ├── ClaudeCodeTask.Core/ # C# 内核（预编译 dll，改动内核后跑该目录 build.ps1 重新编译）
-│   ├── CctScannerV5.cs        并行读盘扫描 + 增量缓存 + 会话血缘提取
+│   ├── CctScannerV6.cs        并行读盘扫描 + 增量缓存 + 会话血缘 + 最后真实输入时间
+│   ├── CctScannerV5.cs        上一版扫描器（类名版本化约定，旧类型保留）
 │   ├── CctSpinner.cs          加载动画
 │   ├── CctConsoleMode.cs      控制台模式（TTY 保持）
 │   ├── build.ps1              内核编译脚本（产物 lib/ClaudeCodeTask.Core.dll）

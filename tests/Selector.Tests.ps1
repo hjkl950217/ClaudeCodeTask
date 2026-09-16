@@ -7,6 +7,7 @@
 BeforeAll {
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Display.ps1"
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Data.ps1"
+    . "$PSScriptRoot\..\ClaudeCodeTask.UI\Clear.ps1"    # 删除确认屏依赖 Get-CctDirDeletePlan / Format-CctBytes
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Selector.ps1"
     $script:esc = [char]27
     $script:now = [datetime]'2026-08-27 12:00:00'
@@ -43,10 +44,16 @@ BeforeAll {
     function New-Enter { New-Key ([char]13) ([ConsoleKey]::Enter) }
     function New-Esc    { New-Key ([char]27) ([ConsoleKey]::Escape) }
     function New-Down   { New-Key ([char]0)  ([ConsoleKey]::DownArrow) }
+    function New-Up     { New-Key ([char]0)  ([ConsoleKey]::UpArrow) }
     function New-Left   { New-Key ([char]0)  ([ConsoleKey]::LeftArrow) }
     function New-Right  { New-Key ([char]0)  ([ConsoleKey]::RightArrow) }
     function New-BS     { New-Key ([char]8)  ([ConsoleKey]::Backspace) }
     function New-Char([char]$c) { New-Key $c ([ConsoleKey]::A) }
+    # 第二十三轮：删除相关按键
+    function New-DKey   { New-Key ([char]'d') ([ConsoleKey]::D) }
+    function New-DelKey { New-Key ([char]0)   ([ConsoleKey]::Delete) }
+    function New-YKey   { New-Key ([char]'y') ([ConsoleKey]::Y) }
+    function New-NKey   { New-Key ([char]'n') ([ConsoleKey]::N) }
 
     # 按键序列枚举器：用 Queue 避免 GetNewClosure 的变量快照陷阱（闭包内 $i++ 不持久）
     # 协议：每次调用返回下一个 ConsoleKeyInfo，$null 表示序列结束
@@ -70,6 +77,17 @@ Describe 'New-CctFrame 卡片网格渲染' {
         $plain = Get-Plain $frame[0]
         $plain | Should -Match '搜索: \[al\]'
         $plain | Should -Match '2/5'
+    }
+    It '结果提示显示在搜索框右侧、不覆盖搜索框（删完立刻能继续操作）' {
+        $ok = @(New-CctFrame $script:gridTasks 0 '' 100 13 $script:now 5 $null '删除成功' $false)
+        $plain = Get-Plain $ok[0]
+        $plain | Should -Match '^搜索: \['            # 搜索框仍在原处
+        $plain | Should -Match '删除成功$'             # 提示在右侧计数位
+        $plain | Should -Not -Match '共 5 项'          # 计数位让给提示
+        $ok[0] | Should -Match '\[92m'                 # 成功样式 = 亮绿
+        $err = @(New-CctFrame $script:gridTasks 0 '' 100 13 $script:now 5 $null '该目录有会话正在使用' $true)
+        $err[0] | Should -Match '\[91m'                # 失败样式 = 亮红
+        (Get-Plain $err[0]) | Should -Match '^搜索: \['
     }
     It '列数计算：W=100 → 2 列（块 0 标题行含两个卡标题）' {
         $frame = @(New-CctFrame $script:gridTasks 0 '' 100 13 $script:now)
@@ -147,28 +165,44 @@ Describe 'New-CctFrame 卡片网格渲染' {
         $last = Get-Plain $frame[-1]
         $last | Should -Match '^  ↑↓←→ 选择'           # 按键提示保持原样开头
         $last | Should -Match 'by github - hjkl950217$' # 版权贴行尾（居右）
-        $last | Should -Match 'Esc 取消\s+by github'    # 提示与版权之间隔有填充空格
+        $last | Should -Match 'Esc 取消\s+v[\d.]+ by github'    # 提示与版权之间隔有填充空格
     }
-    It '帮助行：中宽窗口版权缩短为 by github' {
-        $frame = @(New-CctFrame $script:gridTasks 0 '' 50 13 $script:now)
+    It '帮助行：版权带版本号，且版本号是从 psd1 读的（不写死）' {
+        $frame = @(New-CctFrame $script:gridTasks 0 '' 100 13 $script:now)
         $last = Get-Plain $frame[-1]
-        $last | Should -Match 'by github$'
+        $expect = "v$((Import-PowerShellDataFile -LiteralPath "$PSScriptRoot\..\ClaudeCodeTask.UI\ClaudeCodeTask.psd1").ModuleVersion)"
+        $script:CctVersionLabel | Should -Be $expect
+        $script:CctVersionLabel | Should -Not -BeNullOrEmpty
+        $last | Should -Match ([regex]::Escape($expect))
+    }
+    # 宽度档位随帮助行长度与版权文字宽度走（帮助行提示宽 43；版权按显示宽逐档实测，
+    # 版本号变长时阈值自动跟随，不需要同步改测试）
+    It '帮助行：中宽窗口版权缩短为 vX.Y.Z by github' {
+        $frame = @(New-CctFrame $script:gridTasks 0 '' 70 13 $script:now)
+        $last = Get-Plain $frame[-1]
+        $last | Should -Match 'v[\d.]+ by github$'
         $last | Should -Not -Match 'hjkl950217'
     }
-    It '帮助行：窄窗口版权仅显示 by' {
-        $frame = @(New-CctFrame $script:gridTasks 0 '' 42 13 $script:now)
+    It '帮助行：窄窗口版权只剩版本号' {
+        $frame = @(New-CctFrame $script:gridTasks 0 '' 55 13 $script:now)
         $last = Get-Plain $frame[-1]
-        $last | Should -Match 'by$'
+        $last | Should -Match 'v[\d.]+$'
         $last | Should -Not -Match 'github'
     }
     It '帮助行：极窄窗口版权全省略，仅保留按键提示' {
-        $frame = @(New-CctFrame $script:gridTasks 0 '' 36 13 $script:now)
+        $frame = @(New-CctFrame $script:gridTasks 0 '' 44 13 $script:now)
         $last = Get-Plain $frame[-1]
         $last | Should -Match 'Esc 取消'
         $last | Should -Not -Match 'by'
     }
+    It '帮助行：提示本身超宽时按窗宽截断（不越界）' {
+        $frame = @(New-CctFrame $script:gridTasks 0 '' 30 13 $script:now)
+        $last = Get-Plain $frame[-1]
+        (Get-DisplayWidth $last) | Should -BeLessOrEqual 30
+        $last | Should -Match '^  ↑↓←→ 选择'
+    }
     It '帮助行：多档宽度下显示宽均不超过窗口宽' {
-        foreach ($w in 36, 38, 42, 50, 57, 80, 100) {
+        foreach ($w in 20, 30, 36, 38, 42, 50, 57, 80, 100) {
             $frame = @(New-CctFrame $script:gridTasks 0 '' $w 13 $script:now)
             $width = Get-DisplayWidth (Get-Plain $frame[-1])
             $width | Should -BeLessThan ($w + 1) -Because "宽度 $w"
@@ -277,6 +311,186 @@ Describe 'Show-CctSelector 卡片网格导航（KeySource 注入）' {
         $src = New-KeySource @()
         $r = Show-CctSelector $script:navTasks -KeySource $src
         $r | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'New-CctConfirmFrame 删除确认屏（第二十三轮）' {
+    BeforeAll {
+        $script:plan = [pscustomobject]@{
+            Dir = 'C:\Users\gt\.claude\projects\E-----AI---CPM---CPM----'
+            Exists = $true; InUse = $false
+            Sessions = @(
+                [pscustomobject]@{ Sid8='b55a0b92'; Title='CPM操作助手开发';        LastWrite=[datetime]'2026-09-16 10:45'; Size=37758295 }
+                [pscustomobject]@{ Sid8='8290501c'; Title='任务恢复执行';            LastWrite=[datetime]'2026-09-15 21:43'; Size=14866432 }
+                [pscustomobject]@{ Sid8='9fee8090'; Title='CPM操作助手开发';        LastWrite=[datetime]'2026-09-10 09:27'; Size=8890880 }
+                [pscustomobject]@{ Sid8='3db15803'; Title='组件属性 Web 渲染校验';   LastWrite=[datetime]'2026-09-14 14:16'; Size=1754112 }
+                [pscustomobject]@{ Sid8='c8b9fd1c'; Title='claude.md 反黑话规则失效'; LastWrite=[datetime]'2026-09-15 22:05'; Size=1570611 }
+            )
+            SessionCount = 5; OtherCount = 2; TotalSize = 57600000
+        }
+        $script:confirm = [pscustomobject]@{
+            TaskPath = 'E:\公司\AI任务\CPM相关\CPM操作助手'; ProjectDir = $script:plan.Dir
+            Plan = $script:plan; Scroll = 0
+        }
+    }
+    It '帧高恒 = 窗高，末行是按键提示' {
+        $rows = @(New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 100 -WindowHeight 16 -Now $script:now)
+        $rows.Count | Should -Be 16
+        (Get-Plain $rows[15]) | Should -Match 'y/d/回车 确认删除'
+        (Get-Plain $rows[15]) | Should -Match 'n/Esc 取消'
+    }
+    It '末行按键提示：确认段亮红、取消段暗灰（与主界面按键提示同色）' {
+        $rows = @(New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 100 -WindowHeight 16 -Now $script:now)
+        # 颜色码与文字之间夹着 ESC，必须把 ESC 拼进模式里，否则 ['确认删除' 紧跟 '[90m'] 永远失配
+        $rows[15] | Should -Match ("\[91m\s+y/d/回车 确认删除" + [char]27 + "\[90m\s+n/Esc 取消")
+    }
+    It '头部显示目录、编码位置、会话数与总体积（第二十二轮的 LastUserMsgTime 场景数据）' {
+        $plain = (New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 120 -WindowHeight 16 -Now $script:now) |
+                 ForEach-Object { Get-Plain $_ }
+        ($plain -join "`n") | Should -Match '删除会话历史'
+        ($plain -join "`n") | Should -Match '目录：E:\\公司\\AI任务\\CPM相关\\CPM操作助手'
+        ($plain -join "`n") | Should -Match 'E-----AI---CPM---CPM----'
+        ($plain -join "`n") | Should -Match '全部 5 个会话'
+        ($plain -join "`n") | Should -Match '54\.9 MB'
+        ($plain -join "`n") | Should -Match '另含 2 个附属会话文件'
+    }
+    It '清单按显示宽对齐：各行时间列起始列一致（中文标题宽窄不同也不跑偏）' {
+        $plain = (New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 120 -WindowHeight 16 -Now $script:now) |
+                 ForEach-Object { Get-Plain $_ }
+        $cols = @()
+        foreach ($l in $plain) {
+            $i = $l.IndexOf('09-16'); if ($i -lt 0) { $i = $l.IndexOf('09-15') }
+            if ($i -lt 0) { $i = $l.IndexOf('09-10') }
+            if ($i -lt 0) { $i = $l.IndexOf('09-14') }
+            if ($i -ge 0) { $cols += (Get-DisplayWidth $l.Substring(0, $i)) }
+        }
+        $cols.Count | Should -Be 5
+        @($cols | Select-Object -Unique).Count | Should -Be 1     # 五行的起始显示列完全相同
+    }
+    It '每行显示宽 ≤ 窗宽（120/60/40/30 逐档收窄都不越界，帧高仍 = 窗高）' {
+        foreach ($w in @(120, 60, 40, 30)) {
+            $rows = @(New-CctConfirmFrame -Confirm $script:confirm -WindowWidth $w -WindowHeight 16 -Now $script:now)
+            $rows.Count | Should -Be 16
+            foreach ($r in $rows) {
+                (Get-DisplayWidth (Get-Plain $r)) | Should -BeLessOrEqual $w
+            }
+        }
+    }
+    It '窄窗逐级降级：W=44 去掉大小列，W=31 只剩 id 与标题（全列固定部分 37 列）' {
+        $w44 = (New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 44 -WindowHeight 16 -Now $script:now) |
+               ForEach-Object { Get-Plain $_ } | Where-Object { $_ -match 'b55a0b92' }
+        $w44 | Should -Not -Match 'MB'
+        $w44 | Should -Match '\d\d-\d\d \d\d:\d\d'                 # 时间列仍在
+        $w31 = (New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 31 -WindowHeight 16 -Now $script:now) |
+               ForEach-Object { Get-Plain $_ } | Where-Object { $_ -match 'b55a0b92' }
+        $w31 | Should -Not -Match '\d\d-\d\d \d\d:\d\d'            # 时间列也去掉
+        $w31 | Should -Match 'b55a0b92'
+    }
+    It '清单超出可视高度：末尾显示「…还有 N 个」，↑↓ 滚动可看到后面的项' {
+        $plain = (New-CctConfirmFrame -Confirm $script:confirm -WindowWidth 100 -WindowHeight 10 -Now (Get-Date)) |
+                 ForEach-Object { Get-Plain $_ }
+        ($plain -join "`n") | Should -Match '…还有 \d+ 个'
+        $scrolled = [pscustomobject]@{
+            TaskPath = $script:confirm.TaskPath; ProjectDir = $script:confirm.ProjectDir
+            Plan = $script:plan; Scroll = 4
+        }
+        $p2 = (New-CctConfirmFrame -Confirm $scrolled -WindowWidth 100 -WindowHeight 10 -Now (Get-Date)) |
+              ForEach-Object { Get-Plain $_ }
+        ($p2 -join "`n") | Should -Match 'c8b9fd1c'      # 滚动后能看到最后一项
+    }
+    It '该目录没有会话文件时给出说明而不是空白' {
+        $empty = [pscustomobject]@{
+            TaskPath = 'E:\t\empty'; ProjectDir = 'C:\p\E---empty'
+            Plan = [pscustomobject]@{ Dir='C:\p\E---empty'; Exists=$true; InUse=$false; Sessions=@()
+                                      SessionCount=0; OtherCount=0; TotalSize=0 }
+            Scroll = 0
+        }
+        $plain = (New-CctConfirmFrame -Confirm $empty -WindowWidth 100 -WindowHeight 16 -Now $script:now) |
+                 ForEach-Object { Get-Plain $_ }
+        ($plain -join "`n") | Should -Match '该目录下没有会话文件'
+    }
+}
+
+Describe 'Show-CctSelector 删除流程（第二十三轮）' {
+    BeforeAll {
+        function New-DelFixtureJsonl {
+            param([string]$Dir, [string]$SessionId, [string]$Title, [int]$Msgs = 12, [string]$Cwd = $null)
+            if (-not $Cwd) { $Cwd = $script:caseTask }
+            $cwdJson = $Cwd -replace '\\', '\\'
+            $lines = [System.Collections.Generic.List[string]]::new()
+            $lines.Add(('{"type":"custom-title","customTitle":"' + $Title + '","sessionId":"' + $SessionId + '"}'))
+            for ($i = 1; $i -le $Msgs; $i++) {
+                $lines.Add(('{"type":"user","cwd":"' + $cwdJson + '","timestamp":"2026-09-15T10:00:00.000Z","message":{"role":"user","content":"m' + $i + '"},"uuid":"u' + $i + '","parentUuid":null}'))
+            }
+            [System.IO.File]::WriteAllLines((Join-Path $Dir "$SessionId.jsonl"), $lines, [System.Text.UTF8Encoding]::new($false))
+        }
+    }
+    BeforeEach {
+        # 每个用例独立 fixture（删除是破坏性的，不能共用）
+        $script:caseRoot = Join-Path $env:TEMP ("cct_del_" + [guid]::NewGuid().ToString('N'))
+        $script:caseProj = Join-Path $script:caseRoot 'projects'
+        $script:caseTask = Join-Path $script:caseRoot 'taskX'
+        $script:caseEnc  = Join-Path $script:caseProj 'E---taskX---'
+        New-Item -ItemType Directory -Force $script:caseEnc, $script:caseTask | Out-Null
+        New-DelFixtureJsonl $script:caseEnc 'aaaa1111' '示例任务' 12
+        $script:caseTasks = @(Get-CctTasks -Root $script:caseProj -MinUserMsgs 10 -ExcludePatterns @())
+    }
+    AfterEach {
+        if (Test-Path -LiteralPath $script:caseRoot) { Remove-Item -LiteralPath $script:caseRoot -Recurse -Force }
+    }
+    It 'fixture 前置：扫出一张指向该编码目录的卡' {
+        $script:caseTasks.Count | Should -Be 1
+        $script:caseTasks[0].ProjectDir | Should -Be $script:caseEnc
+    }
+    It '搜索框为空按 d → 进确认屏，按 y 执行删除（整目录进回收站）' {
+        $src = New-KeySource @((New-DKey), (New-YKey), (New-Esc))
+        $r = Show-CctSelector $script:caseTasks -KeySource $src
+        $r | Should -BeNullOrEmpty
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeFalse
+    }
+    It '确认屏按 n 取消：目录原封不动' {
+        $src = New-KeySource @((New-DKey), (New-NKey), (New-Esc))
+        $r = Show-CctSelector $script:caseTasks -KeySource $src
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeTrue
+    }
+    It '确认屏按 Esc 取消：目录原封不动' {
+        $src = New-KeySource @((New-DKey), (New-Esc), (New-Esc))
+        $r = Show-CctSelector $script:caseTasks -KeySource $src
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeTrue
+    }
+    It '确认屏里其他键无效（不会误取消也不会误删）：中间夹方向键后按 y 仍能删' {
+        $src = New-KeySource @((New-DKey), (New-Down), (New-Up), (New-YKey), (New-Esc))
+        $r = Show-CctSelector $script:caseTasks -KeySource $src
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeFalse
+    }
+    It 'Delete 键同样进确认屏（搜索框有词时也可用）' {
+        $src = New-KeySource @((New-DelKey), (New-YKey), (New-Esc))
+        $r = Show-CctSelector $script:caseTasks -KeySource $src
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeFalse
+    }
+    It '搜索框已有内容时 d 照常进输入框（不触发删除）' {
+        # 先按 x 进搜索词，再按 d、y：三个字符都进搜索框 → 全程没进确认态 → 目录仍在
+        $src = New-KeySource @((New-Char ([char]'x')), (New-DKey), (New-YKey), (New-Esc))
+        $r = Show-CctSelector $script:caseTasks -KeySource $src
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeTrue
+    }
+    It '确认屏按 d 也能删（与「d 进确认」同键，连按两下即删）' {
+        $src = New-KeySource @((New-DKey), (New-DKey), (New-Esc))
+        Show-CctSelector $script:caseTasks -KeySource $src | Out-Null
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeFalse
+    }
+    It '删除后的提示不吞按键：删完立刻能接着删下一个' {
+        $enc2 = Join-Path $script:caseProj 'E---taskY---'
+        $task2 = Join-Path $script:caseRoot 'taskY'
+        New-Item -ItemType Directory -Force $enc2, $task2 | Out-Null
+        New-DelFixtureJsonl -Dir $enc2 -SessionId 'bbbb2222' -Title '第二个任务' -Cwd $task2
+        $tasks2 = @(Get-CctTasks -Root $script:caseProj -MinUserMsgs 10 -ExcludePatterns @())
+        $tasks2.Count | Should -Be 2
+        # 连删两次：若删除后的提示把紧随其后的按键吞掉，第二次 d/y 会错位，第二个目录删不掉
+        $src = New-KeySource @((New-DKey), (New-YKey), (New-DKey), (New-YKey), (New-Esc))
+        Show-CctSelector $tasks2 -KeySource $src | Out-Null
+        (Test-Path -LiteralPath $script:caseEnc) | Should -BeFalse
+        (Test-Path -LiteralPath $enc2) | Should -BeFalse
     }
 }
 

@@ -133,9 +133,13 @@ Describe 'Get-CctTasks 聚合' {
         $f.LastActive | Should -Be ([datetime]'2026-08-20 18:00:00')   # 10:00Z + 8h
     }
     It '决策 34 修订：手动组内最新文件是 1 条碎片、老文件 12 条达标 → 选老文件，时间用老文件的' {
-        # 在 taskC 目录（无其他干扰）构造：标题「设计」新文件 1 条 + 老文件 12 条
-        New-TestJsonl "$script:proj\E---taskC---" 'd2' $script:taskC '2026-08-27T20:00:00.000Z' 1 '设计' 'custom'
-        New-TestJsonl "$script:proj\E---taskC---" 'd1' $script:taskC '2026-08-15T10:00:00.000Z' 12 '设计' 'custom'
+        # 用独立目录 taskD（无其他干扰）：标题「设计」新文件 1 条 + 老文件 12 条。
+        # 不能借用 taskC——它里面有更晚的未命名会话 c1，第二十二轮起会正确触发「会话名继承」
+        # 而改变本用例的预期结果，两个机制会互相打架
+        $script:taskD = Join-Path $script:tmpRoot 'taskD'
+        New-Item -ItemType Directory -Force $script:taskD, "$script:proj\E---taskD---" | Out-Null
+        New-TestJsonl "$script:proj\E---taskD---" 'd2' $script:taskD '2026-08-27T20:00:00.000Z' 1 '设计' 'custom'
+        New-TestJsonl "$script:proj\E---taskD---" 'd1' $script:taskD '2026-08-15T10:00:00.000Z' 12 '设计' 'custom'
         $tasks3 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
         $s = $tasks3 | Where-Object { $_.Kind -eq 'Session' -and $_.Name -eq '设计' }
         $s | Should -Not -BeNullOrEmpty
@@ -153,9 +157,12 @@ Describe 'Get-CctTasks 聚合' {
         $tb[0].TitleType | Should -Be '自定义命名'
     }
     It '同名手动命名：组内多条 ≥10 各自列出，不再只留最新（旧同名会话不再被隐藏）' {
-        New-TestJsonl "$script:proj\E---taskC---" 'e1' $script:taskC '2026-08-10T10:00:00.000Z' 12 '重构' 'custom'
-        New-TestJsonl "$script:proj\E---taskC---" 'e2' $script:taskC '2026-08-20T10:00:00.000Z' 15 '重构' 'custom'
-        New-TestJsonl "$script:proj\E---taskC---" 'e3' $script:taskC '2026-08-21T10:00:00.000Z' 5 '重构' 'custom'   # <10，不列出
+        # 独立目录 taskE（同上：taskC 有更晚的未命名会话 c1，会触发会话名继承）
+        $script:taskE = Join-Path $script:tmpRoot 'taskE'
+        New-Item -ItemType Directory -Force $script:taskE, "$script:proj\E---taskE---" | Out-Null
+        New-TestJsonl "$script:proj\E---taskE---" 'e1' $script:taskE '2026-08-10T10:00:00.000Z' 12 '重构' 'custom'
+        New-TestJsonl "$script:proj\E---taskE---" 'e2' $script:taskE '2026-08-20T10:00:00.000Z' 15 '重构' 'custom'
+        New-TestJsonl "$script:proj\E---taskE---" 'e3' $script:taskE '2026-08-21T10:00:00.000Z' 5 '重构' 'custom'   # <10，不列出
         $tasks5 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
         $s = @($tasks5 | Where-Object { $_.Kind -eq 'Session' -and $_.Name -eq '重构' })
         $s.Count | Should -Be 2
@@ -243,6 +250,93 @@ Describe '第十九轮：续接分叉折叠与目录升格' {
         $f = @($tasks19b | Where-Object { $_.Kind -eq 'Folder' })
         $f.Count | Should -Be 1
         $f[0].GroupKey | Should -Be $script:forkDirA
+    }
+}
+
+Describe '第二十二轮：会话名继承（同目录换了新会话）' {
+    BeforeAll {
+        # 场景来源（2026-09-16 用户反馈）：E:\公司\AI任务\CPM相关\CPM操作助手 里命名会话用了
+        # 一段时间后出问题，改用 claude-d 新开未命名会话继续干；用 cct 进旧卡看一眼再退出，
+        # 又把旧会话的文件时间刷新成当天 → 旧会话永远排「最新」，真正在用的新会话进不了列表。
+        $script:inhDir1 = Join-Path $script:tmpRoot 'inhDir1'
+        $script:inhDir2 = Join-Path $script:tmpRoot 'inhDir2'
+        $script:inhDir3 = Join-Path $script:tmpRoot 'inhDir3'
+        $script:inhDir4 = Join-Path $script:tmpRoot 'inhDir4'
+        New-Item -ItemType Directory -Force $script:inhDir1, $script:inhDir2, $script:inhDir3, $script:inhDir4 | Out-Null
+        $script:proj21 = Join-Path $script:tmpRoot 'projects21'
+        New-Item -ItemType Directory -Force "$script:proj21\E---inh1---", "$script:proj21\E---inh2---", "$script:proj21\E---inh3---", "$script:proj21\E---inh4---" | Out-Null
+
+        # TailTs 可选：在文件末尾追加一条「终端回显」——模拟用 cct 进去看一眼再退出，
+        # 它刷新文件时间但不是真实输入（内核 V6 起不计入 LastUserMsgTime）
+        function New-InheritJsonl {
+            param([string]$Dir, [string]$SessionId, [string]$Cwd, [string]$Ts, [int]$Msgs,
+                  [string]$Title = $null, [string]$TitleType = $null, [string]$TailTs = $null)
+            $cwdJson = $Cwd -replace '\\', '\\'
+            $lines = [System.Collections.Generic.List[string]]::new()
+            if ($Title) {
+                $key = if ($TitleType -eq 'custom') { 'customTitle' } else { 'aiTitle' }
+                $lines.Add(('{"type":"' + $TitleType + '-title","' + $key + '":"' + $Title + '","sessionId":"' + $SessionId + '"}'))
+            }
+            for ($i = 1; $i -le $Msgs; $i++) {
+                $lines.Add(('{"type":"user","cwd":"' + $cwdJson + '","timestamp":"' + $Ts + '","message":{"role":"user","content":"m' + $i + '"},"uuid":"u' + $i + '","parentUuid":null}'))
+            }
+            if ($TailTs) {
+                $lines.Add(('{"type":"user","cwd":"' + $cwdJson + '","timestamp":"' + $TailTs + '","message":{"role":"user","content":"<local-command-stdout>See ya!</local-command-stdout>"},"uuid":"uTail","parentUuid":null}'))
+            }
+            [System.IO.File]::WriteAllLines((Join-Path $Dir "$SessionId.jsonl"), $lines, [System.Text.UTF8Encoding]::new($false))
+        }
+
+        # inh1 触发继承：命名 old1（9/14 干完活）之后被打开过（9/16 回显刷了文件时间），
+        # 未命名 neu1（9/15 真实输入更晚）→ 卡指向 neu1、沿用 old1 的名字
+        New-InheritJsonl "$script:proj21\E---inh1---" 'old1' $script:inhDir1 '2026-09-14T01:00:00.000Z' 12 'CPM操作助手开发' 'custom' -TailTs '2026-09-16T02:45:38.000Z'
+        New-InheritJsonl "$script:proj21\E---inh1---" 'neu1' $script:inhDir1 '2026-09-15T13:00:00.000Z' 15 '任务恢复执行' 'ai'
+
+        # inh2 不触发：命名会话自己就是最新的（正常情况，一切照旧）
+        New-InheritJsonl "$script:proj21\E---inh2---" 'old2' $script:inhDir2 '2026-09-17T01:00:00.000Z' 12 '老项目' 'custom'
+        New-InheritJsonl "$script:proj21\E---inh2---" 'neu2' $script:inhDir2 '2026-09-15T13:00:00.000Z' 15 '旧任务' 'ai'
+
+        # inh3 不触发：更新的未命名会话只有 1 条，不够格（防「借了大名进去是空壳」）
+        New-InheritJsonl "$script:proj21\E---inh3---" 'old3' $script:inhDir3 '2026-09-14T01:00:00.000Z' 12 '另一个项目' 'custom'
+        New-InheritJsonl "$script:proj21\E---inh3---" 'neu3' $script:inhDir3 '2026-09-15T13:00:00.000Z' 1 '碎片' 'ai'
+
+        # inh4 不触发：目录里有多个不同命名名 = 几个不相干任务，不做合并
+        New-InheritJsonl "$script:proj21\E---inh4---" 'oldA' $script:inhDir4 '2026-09-14T01:00:00.000Z' 12 '项目甲' 'custom'
+        New-InheritJsonl "$script:proj21\E---inh4---" 'oldB' $script:inhDir4 '2026-09-14T02:00:00.000Z' 12 '项目乙' 'custom'
+        New-InheritJsonl "$script:proj21\E---inh4---" 'neu4' $script:inhDir4 '2026-09-15T13:00:00.000Z' 15 '新任务' 'ai'
+
+        $script:tasks21 = @(Get-CctTasks -Root $script:proj21 -MinUserMsgs 10 -ExcludePatterns @())
+    }
+
+    It '触发继承：卡指向真实输入更晚的未命名会话，名字沿用命名项，且原命名会话不再单列' {
+        $s = @($script:tasks21 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:inhDir1 })
+        $s.Count | Should -Be 1
+        $s[0].SessionId | Should -Be 'neu1'
+        $s[0].Name | Should -Be 'CPM操作助手开发'
+        $s[0].TitleType | Should -Be '自定义命名'
+        $s[0].Path | Should -Be $script:inhDir1
+    }
+    It '被刷新的文件时间不影响判定：旧会话末尾的终端回显（9/16）不算真实输入' {
+        # 若按文件末条时间（9/16）比较，old1 会赢、继承不触发——本用例锁住「必须用真实输入时间」
+        $s = @($script:tasks21 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:inhDir1 })
+        $s[0].LastActive | Should -Be ([datetime]'2026-09-15 21:00:00')   # neu1 的 9/15T13:00Z + 8h
+    }
+    It '命名会话自己就是最新时不继承（正常情况一切照旧）' {
+        $s = @($script:tasks21 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:inhDir2 })
+        $s.Count | Should -Be 1
+        $s[0].SessionId | Should -Be 'old2'
+        $s[0].Name | Should -Be '老项目'
+    }
+    It '更新的未命名会话不够格时不继承（不借名字给空壳）' {
+        $s = @($script:tasks21 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:inhDir3 })
+        $s.Count | Should -Be 1
+        $s[0].SessionId | Should -Be 'old3'
+        $s[0].Name | Should -Be '另一个项目'
+    }
+    It '目录内有多个不同命名名时不继承（不相干任务不合并）' {
+        $s = @($script:tasks21 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:inhDir4 })
+        $s.Count | Should -Be 2
+        @($s | ForEach-Object Name | Sort-Object) | Should -Be @('项目甲', '项目乙')
+        ($s | Where-Object SessionId -eq 'neu4') | Should -BeNullOrEmpty
     }
 }
 
