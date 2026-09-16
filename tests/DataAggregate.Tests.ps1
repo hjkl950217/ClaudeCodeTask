@@ -335,7 +335,11 @@ Describe '第二十二轮：会话名继承（同目录换了新会话）' {
     It '目录内有多个不同命名名时不继承（不相干任务不合并）' {
         $s = @($script:tasks21 | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:inhDir4 })
         $s.Count | Should -Be 2
-        @($s | ForEach-Object Name | Sort-Object) | Should -Be @('项目甲', '项目乙')
+        # 不比排序后的数组：Sort-Object 对中文按当前区域规则排，en-US 的 CI 上「乙」会跑到「甲」前面
+        $names = @($s | ForEach-Object Name)
+        $names.Count | Should -Be 2
+        $names | Should -Contain '项目甲'
+        $names | Should -Contain '项目乙'
         ($s | Where-Object SessionId -eq 'neu4') | Should -BeNullOrEmpty
     }
 }

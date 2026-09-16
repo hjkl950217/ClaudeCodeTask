@@ -440,7 +440,9 @@ Describe 'Show-CctSelector 删除流程（第二十三轮）' {
     }
     It 'fixture 前置：扫出一张指向该编码目录的卡' {
         $script:caseTasks.Count | Should -Be 1
-        $script:caseTasks[0].ProjectDir | Should -Be $script:caseEnc
+        # 不比全路径字符串：CI 的 $env:TEMP 是 8.3 短名（C:\Users\RUNNER~1\...），数据层回的是长名
+        [System.IO.Path]::GetFileName($script:caseTasks[0].ProjectDir) | Should -Be 'E---taskX---'
+        (Test-Path -LiteralPath $script:caseTasks[0].ProjectDir) | Should -BeTrue
     }
     It '搜索框为空按 d → 进确认屏，按 y 执行删除（整目录进回收站）' {
         $src = New-KeySource @((New-DKey), (New-YKey), (New-Esc))
