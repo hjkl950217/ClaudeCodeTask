@@ -2,6 +2,7 @@
 BeforeAll {
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Data.ps1"
     $script:CctCacheMinFiles = 2   # 覆盖拐点：2 个文件即触发缓存路径（真实拐点 20，测试用独立小树）
+    $script:CctAnchorFileNames = @()   # 关闭项目根锚点归并：断言不依赖 %TEMP% 上层内容
     $script:tmpRoot = Join-Path $env:TEMP ("cct_cache_" + [guid]::NewGuid().ToString('N'))
     $script:proj = Join-Path $script:tmpRoot 'projects'
     $script:taskA = Join-Path $script:tmpRoot 'taskA'

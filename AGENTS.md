@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -39,12 +39,12 @@ cct
 - **resize 响应**：主循环轮询 `WindowWidth/Height`，变化时 `ESC[2J` 清屏 + 置空 `CctLastRows` 强制全量重绘并立即 `continue` 重绘，不要改成局部刷新。
 - **行 diff 重绘**：`Write-CctFrame` 只重绘变化行；覆盖式写入（不清行），仅新行变短或被删时 `ESC[K]` 清尾/清行。
 - **Add-Type 类型缓存陷阱**：C# 类（`CctScannerV*`、`CctSpinner`、`CctConsoleMode`）经 `Add-Type` 后进程内同名类缓存（内联编译与 `-Path` 加载 dll 同理），改类体必须换类名（V2→V3→V4→V5 惯例），否则旧类型生效。
-- **C# 扫描器归组**：按 `firstCwd`（会话启动/存储目录）归组、`lastCwd` 作 resume 目标——幻影 Folder 根因在此，勿改回按末现目录归组。
+- **项目根归组（第二十五轮）**：分组键与 resume 目标 = 从 `firstCwd` 向上最近的含 `CLAUDE.md` 或 `AGENTS.md` 的目录（两个文件名都认，用户已统一改名为 `AGENTS.md`）；找不到锚点回退 `firstCwd`。勿改回按末现目录归组——幻影 Folder 根因在此。也不能只认 `CLAUDE.md`：用户已在全机把项目指令文件改名。
 - **续接分叉折叠与目录升格（第十九轮）**：`claude -c`/`--resume` 续接会话会在同一编码目录生成携带祖先历史的新 jsonl（历史行 message 层带蛇形 `session_id` 指向祖先，扫描器 V5 提取为 Ancestors 列）。同目录内「祖先被合格后代声明」→ 祖先折叠，只留对话链最新端点；组内无合格会话时「有标题且 ≥1 真实消息」的最新碎片升格为会话卡（豁免 MinUserMsgs 阈值，精确 --resume）。缓存 version 2（raw 7 列），旧缓存自动废弃重扫。
 - **会话名继承（第二十二轮）**：目录内只有一个命名名、且存在「真实输入时间更晚」的合格未命名会话时，由该未命名会话顶替命名组出卡、沿用该名字（**只改展示，不写 jsonl**）。判定必须用 `LastUserMsgTime`（内核 V6 第 8 列 = 最后一条真实用户输入的 timestamp），**不能用 `LastTimestamp`**——会话文件被打开一次就会刷新末条时间戳，用 cct 进去看一眼再退出也会把它排成「最新」，卡片从此永远指向它。多命名名（不相干任务）或未命名会话不够格时不触发。缓存 version 3（raw 8 列）。内核 V6 同时把 `<` 开头（local-command-stdout 等终端回显）与 `Continue from where you left off.`（CC 恢复会话注入）排除出真实输入判定，否则新列照样被刷新。
 - **选择器内删除（第二十三轮）**：选中卡片按 `d`（**搜索框为空时**）或 `Delete` 进确认屏，`y`/回车/`d` 都能执行（`d` 与进确认同键，连按两下即删）、`n`/`Esc` 取消、**其余键一律无效**（用户可能想滚动看完清单，误触不该有后果）。删除后的结果提示显示在**搜索框右侧的计数位**（不覆盖搜索框），按键时清除且**不吞该按键**——删完立刻处于正常操作状态，不必先按一下清提示；已输入搜索词时 `d` 照常进输入框，要删就用 `Delete`。一次删掉该卡片 `GroupKey` 对应的**整个编码目录**（`ProjectDir`，含 memory、agent 子会话、附属目录、孤立目录），走 Windows 回收站可还原——**不是** `cct clear -cc` 的永久删，两者刻意分离（clear 仍按行数判定）。卡片靠数据层的 `ProjectDir` 字段定位（`~/.claude/projects` 目录名编码不可逆，无法从 StartCwd 反推）。确认屏由 `New-CctConfirmFrame` 纯函数渲染：四列（短 id / 标题 / 时间 / 大小）**一律按显示宽算，禁止 `\t`**（终端制表位按字符数推进，中文占 2 列必然错位），窄窗逐级降级（去大小列 → 去时间列），每行显示宽恒 ≤ 窗宽。末行按键提示分两段着色——确认段亮红、取消段暗灰（与主界面按键提示同色），两段各自按剩余宽度截断（取消段吃确认段用剩的宽，不足则整段丢弃）。`Test-CctDirInUse` 靠独占打开 jsonl 探测占用，**挡不住「另一终端正开着该会话」**（CC 写 jsonl 是追加后关闭、不常驻句柄）——安全网是回收站，不是探测。
 - **增量缓存**：文件数 ≥ 拐点 20 且缓存存在时按 mtime+size 复用；小于拐点走全量且不读写缓存；读/写失败静默回退全量。缓存结构 `{version, files:{path:{mt,sz,raw}}}`。
-- **includeFolderFind 开关**：config 字段 `includeFolderFind`（0 = 默认，只输出含 sessionId 的会话；1 = 会话 + 「纯 folder」目录——同目录已有可恢复会话时 folder 头被 session 取代，folder 只在无会话组保留）。扫描始终含 folder（firstCwd 归组/排序依赖它），仅输出/查找层按此过滤。所有 config 消费点统一传 `($cfg.includeFolderFind -eq 1)` 给 `Get-CctTasks -IncludeFolderFind`（`Cct.ps1` 交互式、`Command.ps1` 的 list/find/run）。
+- **includeFolderFind 开关**：config 字段 `includeFolderFind`（0 = 默认，只输出含 sessionId 的会话；1 = 会话 + 「纯 folder」目录——同目录已有可恢复会话时 folder 头被 session 取代，folder 只在无会话组保留）。扫描始终含 folder（项目根归组/排序依赖它），仅输出/查找层按此过滤。所有 config 消费点统一传 `($cfg.includeFolderFind -eq 1)` 给 `Get-CctTasks -IncludeFolderFind`（`Cct.ps1` 交互式、`Command.ps1` 的 list/find/run）。
 - **TitleType 三层值**：jsonl 事件原文 `custom`/`ai`（内核/缓存层）→ 读取层枚举 `userCustom`/`aiGenerate`（`New-CctSessionRecord` 经 `$script:CctTitleKindMap` 映射，**分组比较逻辑用此层**）→ 展示层中文 `自定义命名`/`自动生成`（输出 Session 项，仅供人读、不可比较）。改动任一层须同步比较点与对应测试断言。
 - **中文宽度**：终端列宽一律用 `Get-DisplayWidth`（勿用 `.Length`）；对齐用 `Pad-DisplayLeft/Right`、截断用 `Truncate-Display`。
 - **帮助行版权**：右侧显示 `v<版本号> by github - hjkl950217`，版本号由 `Selector.ps1` 从 psd1 读取到 `$script:CctVersionLabel`（**不写死**，发版改 `build-metadata.json` 盖章后自动跟随）；分档按 `Get-DisplayWidth` **逐档实测宽度**而非写死阈值——版本号长度会变（0.3.3 → 0.10.0），写死阈值将来会算错。

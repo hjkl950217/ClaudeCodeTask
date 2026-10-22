@@ -8,6 +8,7 @@ BeforeAll {
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Data.ps1"
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Launcher.ps1"   # Invoke-CctRun 依赖 Invoke-CctTask
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Command.ps1"
+    $script:CctAnchorFileNames = @()   # 关闭项目根锚点归并：断言不依赖 %TEMP% 上层内容
 
     $script:tmp = Join-Path $env:TEMP ("cct_cmd_" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:tmp | Out-Null

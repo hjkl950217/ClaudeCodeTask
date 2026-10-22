@@ -271,7 +271,7 @@ $backupFails = [System.Collections.Generic.List[string]]::new()
 foreach ($f in $toChange) {
     if (Test-Path -LiteralPath $f.Dst) {
         # 延迟创建：只有真有旧文件要备份时才建目录——升版本后首次同步目标目录是空的，
-        # 不该留下一个空备份目录（CLAUDE.md 登记过的临时垃圾）
+        # 不该留下一个空备份目录（AGENTS.md 登记过的临时垃圾）
         if (-not $backupNeeded) {
             New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
             $backupNeeded = $true

@@ -4,6 +4,7 @@ BeforeAll {
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Spinner.ps1"
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Launcher.ps1"
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Cct.ps1"
+    $script:CctAnchorFileNames = @()   # 关闭项目根锚点归并：断言不依赖 %TEMP% 上层内容
     $script:tmp = Join-Path $env:TEMP ("cct_main_" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:tmp | Out-Null
     $script:cfgPath = Join-Path $script:tmp 'config.json'

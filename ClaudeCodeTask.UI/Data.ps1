@@ -47,9 +47,21 @@
 #   - 聚合层新增「会话名继承」：目录内只有一个命名名、且存在「真实输入时间更晚」的合格
 #     未命名会话时，由该未命名会话顶替命名组出卡并沿用该名字（只改展示，不写 jsonl）。
 #     缓存 version 2→3（raw 7→8 列）。
+# 第二十五轮修复（2026-10-21）：
+#   - 分组键与 resume 目标从「首现/末现 cwd」改为「项目根」：从 StartCwd 向上找最近的含
+#     CLAUDE.md 或 AGENTS.md 的目录（两个文件名都认，用户已把项目指令文件从 CLAUDE.md
+#     统一改名为 AGENTS.md）。根因：用户在子目录 cd 后 claude -c 恢复，工具又把 cwd 改回
+#     子级，首现 cwd 停在子目录 → 同一对话链的祖先与后代被拆成两组，各出一张同名卡
+#     （用户反馈 bug：cct 里同一会话显示为 2 个）。resume 目标同样落到项目根，避免下次
+#     恢复又停在子级。找不到锚点时回退 StartCwd，行为与旧版一致。
 
 # 文件数拐点：达到该值且缓存可用才走增量路径（测试可覆盖该 script 变量）
 $script:CctCacheMinFiles = 20
+
+# 项目根锚点文件名（第二十五轮）：从 StartCwd 向上找最近的含任一文件的目录。
+# 两个都认——用户可能把项目指令文件从 CLAUDE.md 改名为 AGENTS.md（或反过来）；
+# 测试可覆盖为 @() 关闭向上归并，避免断言依赖 %TEMP% 上层恰好有没有锚点文件。
+$script:CctAnchorFileNames = @('CLAUDE.md', 'AGENTS.md')
 
 # 标题类型枚举（读取层）：jsonl 标题事件原文 → 内部枚举。custom = 用户手动命名、
 # ai = AI 自动生成。分组比较逻辑用此枚举；展示层另有中文值（见 Get-CctTasks 输出项）
@@ -67,6 +79,24 @@ function Get-JsonProp {
     $v = [System.Text.Json.JsonElement]::new()
     if ($Element.TryGetProperty($Name, [ref]$v)) { return $v }
     return $null
+}
+
+# 项目根 = 从 StartCwd 向上最近的含 CLAUDE.md / AGENTS.md 的目录；找不到回退 StartCwd。
+# 用文件存在性判断而非路径字符串，中文目录编码碰撞（多个目录编码成同一个物理 projects 子目录）
+# 也不影响。向上到驱动器根自动停止（GetDirectoryName 返回 $null）。
+function Get-CctProjectRoot {
+    param([string]$Path)
+    if (-not $Path -or -not $script:CctAnchorFileNames -or $script:CctAnchorFileNames.Count -eq 0) { return $Path }
+    $p = $Path
+    while ($p) {
+        foreach ($name in $script:CctAnchorFileNames) {
+            if ([System.IO.File]::Exists([System.IO.Path]::Combine($p, $name))) { return $p }
+        }
+        $parent = [System.IO.Path]::GetDirectoryName($p)
+        if (-not $parent -or $parent -eq $p) { break }
+        $p = $parent
+    }
+    return $Path
 }
 
 # C# 扫描结果 string[] → 会话记录对象（Read-CctSessionFile 与 Get-CctTasks 并行路径共用）
@@ -97,10 +127,13 @@ function New-CctSessionRecord {
         }
     }
 
+    $startCwd = if ($Raw[0]) { $Raw[0] } else { $null }
     return [pscustomobject]@{
         SessionId      = $sessionId
-        StartCwd       = if ($Raw[0]) { $Raw[0] } else { $null }   # 首现 cwd = 启动/存储目录
-        Cwd            = if ($Raw[1]) { $Raw[1] } else { $null }   # 末现 cwd = resume 目标
+        StartCwd       = $startCwd                                  # 首现 cwd = 启动/存储目录
+        # 项目根（第二十五轮）：分组键 + 卡片 resume 目标。找不到锚点时 = StartCwd。
+        ProjectRoot    = if ($startCwd) { Get-CctProjectRoot $startCwd } else { $null }
+        Cwd            = if ($Raw[1]) { $Raw[1] } else { $null }   # 末现 cwd（保留原值，不再用于分组/启动）
         LastTimestamp  = $lastTs
         Title          = if ($Raw[3]) { $Raw[3] } else { $null }
         TitleType      = if ($Raw[4] -and $script:CctTitleKindMap.ContainsKey([string]$Raw[4])) { $script:CctTitleKindMap[[string]$Raw[4]] } else { $null }
@@ -125,7 +158,7 @@ function Read-CctSessionFile {
     } catch {
         # 读取失败（文件被占用等）：返回空记录
         return [pscustomobject]@{
-            SessionId = $sessionId; StartCwd = $null; Cwd = $null; LastTimestamp = $null
+            SessionId = $sessionId; StartCwd = $null; ProjectRoot = $null; Cwd = $null; LastTimestamp = $null
             Title = $null; TitleType = $null; UserMsgs = 0; HasRealUserMsg = $false; Ancestors = @()
             LastUserMsgTime = $null; ProjectDir = [System.IO.Path]::GetDirectoryName($Path)
         }
@@ -250,7 +283,8 @@ function Get-CctTasks {
     }
 
     # 3. 过滤失效目录（worktree 残留 + 已删除）与排除模式的 cwd（Temp 探针残留会话的 cwd 指向 Temp）
-    #    第九轮：StartCwd（存储目录，分组键）与 Cwd（resume 目标）都须存在且过排除模式
+    #    第九轮：StartCwd（存储目录）与 Cwd（末现目录）都须存在且过排除模式
+    #    第二十五轮：分组与启动用 ProjectRoot（项目根），但有效性仍按这两个真实目录判断
     #    第十一轮：Test-Path → Directory.Exists（纯 .NET 目录存在性判定，免 PowerShell 提供程序开销）
     $valid = @($sessions | Where-Object {
         $startCwd = $_.StartCwd
@@ -262,10 +296,11 @@ function Get-CctTasks {
         -not ($ExcludePatterns | Where-Object { $cwd -like "*$($_)*" })
     })
 
-    # 4. 按 StartCwd 分组（第九轮：jsonl 物理存储于启动目录编码目录，按首现 cwd 分组，
-    #    文件夹编码目录必有 jsonl → 幻影 Folder 天然消失；Session 项 Path 仍用末现 cwd）
+    # 4. 按项目根分组（第二十五轮：从首现 cwd 向上找最近含 CLAUDE.md/AGENTS.md 的目录；
+    #    找不到锚点则回退首现 cwd，与旧行为一致）。会话项 Path 也用项目根——resume 前
+    #    Set-Location 到项目根，避免退出时停在子目录导致下次恢复又落在子级。
     $items = [System.Collections.Generic.List[object]]::new()
-    foreach ($g in ($valid | Group-Object StartCwd)) {
+    foreach ($g in ($valid | Group-Object ProjectRoot)) {
         $folderPath = $g.Name
         $folderName = Split-Path -Leaf $folderPath
         $byTime = @($g.Group | Sort-Object LastTimestamp -Descending)
@@ -296,11 +331,11 @@ function Get-CctTasks {
             foreach ($q in $qualified) {
                 if ($supersededIds.Contains($q.SessionId)) { continue }   # 被合格后代折叠，对话链只留最新端点
                 $sessionItems.Add([pscustomobject]@{
-                    Kind = 'Session'; Path = $q.Cwd; Name = $mg.Name   # Path=末现 cwd（resume 目标）
+                    Kind = 'Session'; Path = $q.ProjectRoot; Name = $mg.Name   # Path=项目根（resume 目标）
                     Subtitle = $null
                     LastActive = $q.LastTimestamp.ToLocalTime()
                     SessionId = $q.SessionId
-                    GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=StartCwd（挂到存储目录文件夹下）
+                    GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=项目根（挂到项目根文件夹下）
                     ProjectDir = $q.ProjectDir                         # jsonl 所在编码目录（删除时定位用）
                 })
             }
@@ -327,7 +362,7 @@ function Get-CctTasks {
                 if ($unnamedLatest.LastUserMsgTime -gt $namedLatest.LastUserMsgTime) {
                     $sessionItems.Clear()
                     $sessionItems.Add([pscustomobject]@{
-                        Kind = 'Session'; Path = $unnamedLatest.Cwd; Name = $manualGroups[0].Name
+                        Kind = 'Session'; Path = $unnamedLatest.ProjectRoot; Name = $manualGroups[0].Name
                         Subtitle = $null
                         LastActive = $unnamedLatest.LastTimestamp.ToLocalTime()
                         SessionId = $unnamedLatest.SessionId
@@ -344,7 +379,7 @@ function Get-CctTasks {
             $aiBig = @($g.Group | Where-Object { $_.TitleType -eq 'aiGenerate' -and $_.UserMsgs -ge $MinUserMsgs -and $_.HasRealUserMsg } | Sort-Object LastTimestamp -Descending)
             if ($aiBig.Count -gt 0) {
                 $sessionItems.Add([pscustomobject]@{
-                    Kind = 'Session'; Path = $aiBig[0].Cwd; Name = $aiBig[0].Title   # Path=末现 cwd（resume 目标）
+                    Kind = 'Session'; Path = $aiBig[0].ProjectRoot; Name = $aiBig[0].Title   # Path=项目根（resume 目标）
                     Subtitle = $null
                     LastActive = $aiBig[0].LastTimestamp.ToLocalTime()
                     SessionId = $aiBig[0].SessionId
@@ -364,7 +399,7 @@ function Get-CctTasks {
             if ($promote.Count -gt 0) {
                 $p = $promote[0]
                 $sessionItems.Add([pscustomobject]@{
-                    Kind = 'Session'; Path = $p.Cwd; Name = $p.Title
+                    Kind = 'Session'; Path = $p.ProjectRoot; Name = $p.Title
                     Subtitle = $null
                     LastActive = $p.LastTimestamp.ToLocalTime()
                     SessionId = $p.SessionId

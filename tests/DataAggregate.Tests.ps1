@@ -1,5 +1,7 @@
 BeforeAll {
     . "$PSScriptRoot\..\ClaudeCodeTask.UI\Data.ps1"
+    # 关闭项目根锚点向上归并：测试临时目录的上级目录内容不可控，避免断言依赖运行环境
+    $script:CctAnchorFileNames = @()
     $script:tmpRoot = Join-Path $env:TEMP ("cct_agg_" + [guid]::NewGuid().ToString('N'))
     # 模拟 projects 目录
     $script:proj = Join-Path $script:tmpRoot 'projects'
@@ -63,11 +65,12 @@ Describe 'Get-CctTasks 聚合' {
         ($script:tasks | Where-Object { $_.Kind -eq 'Folder' -and $_.Path -eq $script:taskA }) | Should -BeNullOrEmpty
         @($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.GroupKey -eq $script:taskA }).Count | Should -Be 3
     }
-    It 'taskA 会话项：手动命名全保留（codex伪装 12 条 + 账号调优 15 条），自动命名 3 条不保留（已有手动项，决策 36）' {
+    It 'taskA 会话项：手动命名全保留（codex伪装 12 条 + 账号调优 15 条 + 中途切换 12 条），自动命名 3 条不保留（已有手动项，决策 36）' {
         $sessions = @($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.Path -eq $script:taskA })
-        $sessions.Count | Should -Be 2
+        $sessions.Count | Should -Be 3
         ($sessions | Where-Object Name -eq '账号调优') | Should -Not -BeNullOrEmpty
         ($sessions | Where-Object Name -eq 'codex伪装') | Should -Not -BeNullOrEmpty
+        ($sessions | Where-Object Name -eq '中途切换') | Should -Not -BeNullOrEmpty
         ($sessions | Where-Object Name -eq 'git status概览') | Should -BeNullOrEmpty
     }
     It '手动命名同样受阈值约束（决策 34 修订）：a4 只有 3 条消息 → 不保留' {
@@ -75,12 +78,12 @@ Describe 'Get-CctTasks 聚合' {
         $tasks2 = @(Get-CctTasks -Root $script:proj -MinUserMsgs 10 -ExcludePatterns @('ConfigBackup'))
         ($tasks2 | Where-Object { $_.Kind -eq 'Session' -and $_.Path -eq $script:taskA -and $_.Name -eq '签到' }) | Should -BeNullOrEmpty
     }
-    It '第九轮：cwd 首现≠末现（启动后中途 cd 到子目录）的会话归到 StartCwd 分组，且 Path 用末现目录' {
-        # a5 jsonl 首现 cwd=taskA（存储目录）、末现 cwd=taskA\sub（resume 目标目录）
+    It '第二十五轮：cwd 首现≠末现（启动后中途 cd 到子目录）的会话归到 StartCwd 分组，Path 用项目根' {
+        # a5 jsonl 首现 cwd=taskA（启动目录）、末现 cwd=taskA\sub；无锚点时项目根回退首现 cwd
         $s = $script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.Name -eq '中途切换' }
         $s | Should -Not -BeNullOrEmpty
-        $s.GroupKey | Should -Be $script:taskA        # 归到 StartCwd（taskA）分组
-        $s.Path | Should -Be $script:taskSub         # resume 目标 = 末现目录（sub）
+        $s.GroupKey | Should -Be $script:taskA        # 归到项目根（taskA）分组
+        $s.Path | Should -Be $script:taskA            # resume 目标 = 项目根，不再用末现目录
     }
     It '第九轮：无 cwd 首现=taskSub 的文件夹项（幻影 Folder 消失，不再产生 sub 文件夹）' {
         # 旧逻辑按末现 cwd 分组 → 会凭空造出 taskA\sub 文件夹；修复后分组键是首现 cwd，sub 只是会话的 Path
@@ -112,8 +115,8 @@ Describe 'Get-CctTasks 聚合' {
         $script:tasks | Where-Object { $_.Path -eq $script:taskDeleted } | Should -BeNullOrEmpty
     }
     It '排除 agent- 前缀与 journal.jsonl（决策 12）' {
-        # taskA 只能有 2 个会话项（若 agent 未排除会多出项）
-        @($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.Path -eq $script:taskA }).Count | Should -Be 2
+        # taskA 只能有 3 个会话项（若 agent 未排除会多出项）
+        @($script:tasks | Where-Object { $_.Kind -eq 'Session' -and $_.Path -eq $script:taskA }).Count | Should -Be 3
     }
     It 'ConfigBackup 目录排除' {
         $script:tasks | Where-Object { $_.Name -eq '备份会话' -or $_.Subtitle -eq '备份会话' } | Should -BeNullOrEmpty
@@ -341,6 +344,46 @@ Describe '第二十二轮：会话名继承（同目录换了新会话）' {
         $names | Should -Contain '项目甲'
         $names | Should -Contain '项目乙'
         ($s | Where-Object SessionId -eq 'neu4') | Should -BeNullOrEmpty
+    }
+}
+
+Describe '第二十五轮：项目根锚点（CLAUDE.md / AGENTS.md）' {
+    BeforeAll {
+        $script:anchorProj = Join-Path $script:tmpRoot 'projects23'
+        $script:anchorParent = Join-Path $script:tmpRoot 'anchorParent'
+        $script:anchorChild = Join-Path $script:anchorParent 'child'
+        $script:anchorOther = Join-Path $script:tmpRoot 'anchorOther'
+        New-Item -ItemType Directory -Force "$script:anchorProj\E---anchor---", $script:anchorChild, $script:anchorOther | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $script:anchorParent 'AGENTS.md'), '')
+        [System.IO.File]::WriteAllText((Join-Path $script:anchorOther 'CLAUDE.md'), '')
+        # n1 首现 cwd 在无锚点的子目录 → 归到父目录的 AGENTS.md
+        New-TestJsonl "$script:anchorProj\E---anchor---" 'n1' $script:anchorChild '2026-10-21T09:00:00.000Z' 12 '子目录会话' 'custom'
+        # n2 目录只有 CLAUDE.md（旧文件名）→ 同样识别为项目根
+        New-TestJsonl "$script:anchorProj\E---anchor---" 'n2' $script:anchorOther '2026-10-21T08:00:00.000Z' 12 '老锚点会话' 'custom'
+        $script:CctAnchorFileNames = @('CLAUDE.md', 'AGENTS.md')
+        $script:anchorTasks = @(Get-CctTasks -Root $script:anchorProj -MinUserMsgs 10 -ExcludePatterns @())
+    }
+    AfterAll { $script:CctAnchorFileNames = @() }
+
+    It '子目录无锚点：分组键与 Path 都归到最近的 AGENTS.md 目录' {
+        $s = @($script:anchorTasks | Where-Object { $_.Kind -eq 'Session' -and $_.SessionId -eq 'n1' })
+        $s.Count | Should -Be 1
+        $s[0].GroupKey | Should -Be $script:anchorParent
+        $s[0].Path | Should -Be $script:anchorParent
+    }
+    It 'CLAUDE.md 与 AGENTS.md 同等识别' {
+        $s = @($script:anchorTasks | Where-Object { $_.Kind -eq 'Session' -and $_.SessionId -eq 'n2' })
+        $s.Count | Should -Be 1
+        $s[0].GroupKey | Should -Be $script:anchorOther
+        $s[0].Path | Should -Be $script:anchorOther
+    }
+    It '锚点关闭（找不到）时回退 StartCwd' {
+        $script:CctAnchorFileNames = @()
+        $t = @(Get-CctTasks -Root $script:anchorProj -MinUserMsgs 10 -ExcludePatterns @())
+        $s = @($t | Where-Object { $_.Kind -eq 'Session' -and $_.SessionId -eq 'n1' })
+        $s[0].GroupKey | Should -Be $script:anchorChild
+        $s[0].Path | Should -Be $script:anchorChild
+        $script:CctAnchorFileNames = @('CLAUDE.md', 'AGENTS.md')
     }
 }
 
