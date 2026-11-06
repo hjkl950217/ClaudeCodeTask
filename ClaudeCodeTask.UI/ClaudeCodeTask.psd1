@@ -1,6 +1,6 @@
 @{
     RootModule           = 'ClaudeCodeTask.psm1'
-    ModuleVersion        = '0.6.0'
+    ModuleVersion        = '0.7.0'
     CompatiblePSEditions = @('Core')
     GUID                 = '185bb7d7-e410-451b-8300-db7dfcb1a244'
     Author               = '长空X'
@@ -17,7 +17,7 @@
             Tags         = @('ClaudeCode', 'claude', 'claude-code', 'task-selector', 'selector', 'sessions', 'launcher', 'TUI', 'productivity', 'PSEdition_Core', 'Windows')
             LicenseUri   = 'https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/hjkl950217/ClaudeCodeTask'
-            ReleaseNotes = '0.6.0：命名会话现在是目录入口。只要给会话起过名字，哪怕只有一条消息也会出现在列表里；同名多段（比如 /clear 之后继续聊）合并成一张卡，卡片指向文件时间最新的那段。选中卡片后先切到该会话的启动目录，再执行配置里的启动命令，和你在目录下直接运行 claude-dc 效果一致。未命名的目录仍按原来的阈值逻辑出卡。缓存结构未变，无需清理。 | 0.6.0: named sessions are now the entry point for a directory. Once you have named a session, it shows up in the list even if it has only one message. Multiple segments sharing the same name (for example, after /clear) are merged into one card that points to the most recently written file. Selecting a card first changes to the session start directory, then runs the launch command from your config, exactly like running claude-dc in that directory. Directories without a named session keep the previous threshold behavior. The cache format is unchanged.'
+            ReleaseNotes = '0.7.0：新增 cct update 命令。它会查询 PowerShell Gallery 的最新版本并直接安装，不用再记 Install-Module 的参数。已经是最新版时会直接告诉你；安装完成后需要重开终端（或先 Remove-Module ClaudeCodeTask）才生效。 | 0.7.0: adds the cct update command. It checks the latest version on the PowerShell Gallery and installs it directly, so you no longer need to remember the Install-Module parameters. If you are already on the latest version, it tells you and stops. Reopen the terminal (or run Remove-Module ClaudeCodeTask first) in order for the update to take effect.'
         }
     }
 }

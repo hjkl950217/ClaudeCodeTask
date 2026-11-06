@@ -393,3 +393,36 @@ Describe 'Invoke-CctRun（run 命令：定位并启动）' {
         } finally { Pop-Location }
     }
 }
+
+Describe 'Invoke-CctUpdate（更新命令）' {
+    BeforeAll {
+        $script:curVer = (Import-PowerShellDataFile -Path "$PSScriptRoot\..\ClaudeCodeTask.UI\ClaudeCodeTask.psd1").ModuleVersion
+    }
+    It '路由：cct update → Command' {
+        $inv = Resolve-CctInvocation -Tokens @('update') -HasTty $true
+        $inv.Mode | Should -Be 'Command'
+        $inv.Name | Should -Be 'update'
+    }
+    It '已是最新：不调用安装' {
+        Mock Find-Module { [pscustomobject]@{ Version = $script:curVer } }
+        Mock Install-Module { }
+        Mock Update-Module { }
+        Invoke-CctUpdate -Tokens @()
+        Should -Invoke Install-Module -Times 0
+        Should -Invoke Update-Module -Times 0
+    }
+    It '有新版本且无安装记录：调用 Install-Module -Force' {
+        Mock Find-Module { [pscustomobject]@{ Version = '99.0.0' } }
+        Mock Get-InstalledModule { $null }
+        Mock Install-Module { }
+        Invoke-CctUpdate -Tokens @()
+        Should -Invoke Install-Module -Times 1 -ParameterFilter { $Name -eq 'ClaudeCodeTask' -and $Force }
+    }
+    It '有新版本且已有安装记录：调用 Update-Module -Force' {
+        Mock Find-Module { [pscustomobject]@{ Version = '99.0.0' } }
+        Mock Get-InstalledModule { [pscustomobject]@{ Name = 'ClaudeCodeTask'; Version = $script:curVer } }
+        Mock Update-Module { }
+        Invoke-CctUpdate -Tokens @()
+        Should -Invoke Update-Module -Times 1 -ParameterFilter { $Name -eq 'ClaudeCodeTask' -and $Force }
+    }
+}

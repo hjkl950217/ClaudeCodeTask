@@ -15,6 +15,7 @@ $script:CctCommands = @{
     'run'   = 'Invoke-CctRun'
     'ui'    = 'Invoke-CctUi'
     'clear' = 'Invoke-CctClear'
+    'update' = 'Invoke-CctUpdate'
 }
 
 # 空格规范化：PowerShell 只按半角空格切分参数，全角空格（U+3000）会黏在 token 内。
@@ -241,6 +242,51 @@ function Invoke-CctUi {
     return Invoke-CctMain -Keyword $keyword -ConfigPath $ConfigPath -ProjectsRoot $Root
 }
 
+# cct update：从 PowerShell Gallery 检查并安装最新版。
+# 直接执行而不是只打印命令：模块更新不常用，用户不该记 Install-Module 的参数。
+# 版本升级时 Gallery 会装到新的版本目录，不覆盖当前进程已加载的 dll；装完必须重开终端生效。
+function Invoke-CctUpdate {
+    param([string[]]$Tokens = @())
+
+    $psd1 = Join-Path $PSScriptRoot 'ClaudeCodeTask.psd1'
+    $current = [version](Import-PowerShellDataFile -Path $psd1).ModuleVersion
+
+    try {
+        $latest = Find-Module -Name 'ClaudeCodeTask' -Repository PSGallery -ErrorAction Stop
+    } catch {
+        Write-Host "无法查询 PowerShell Gallery：$($_.Exception.Message)" -ForegroundColor Red
+        Write-Host '可手动更新：Install-Module -Name ClaudeCodeTask -Scope CurrentUser -Force'
+        return
+    }
+
+    $latestVersion = [version]$latest.Version
+    Write-Host "当前版本: v$current"
+    Write-Host "最新版本: v$latestVersion"
+
+    if ($latestVersion -le $current) {
+        Write-Host '已是最新版本，无需更新。'
+        return
+    }
+
+    Write-Host "正在安装 v$latestVersion..."
+    try {
+        # 有 InstalledModule 记录（曾经 Install-Module 装过）走 Update-Module；
+        # 手动拷贝部署的模块没有记录，用 Install-Module -Force 建立记录并安装。
+        $installed = Get-InstalledModule -Name 'ClaudeCodeTask' -ErrorAction SilentlyContinue
+        if ($installed) {
+            Update-Module -Name 'ClaudeCodeTask' -Force -AcceptLicense -ErrorAction Stop
+        } else {
+            Install-Module -Name 'ClaudeCodeTask' -Scope CurrentUser -Force -AllowClobber -AcceptLicense -ErrorAction Stop
+        }
+    } catch {
+        Write-Host "自动更新失败：$($_.Exception.Message)" -ForegroundColor Red
+        Write-Host '请手动运行：Install-Module -Name ClaudeCodeTask -Scope CurrentUser -Force'
+        return
+    }
+
+    Write-Host "已安装 v$latestVersion。重开终端（或先 Remove-Module ClaudeCodeTask）后生效。"
+}
+
 # 版本号：读模块 manifest 的 ModuleVersion；第二行输出仓库地址（ProjectUri 在 PrivateData.PSData，单一来源）
 function Get-CctVersion {
     $psd1 = Join-Path $PSScriptRoot 'ClaudeCodeTask.psd1'
@@ -303,6 +349,14 @@ function Get-CctHelpText {
                     '  --dry-run         只打印规则与清单，不删除（-cc 用）',
                     '  -h, --help        显示本命令帮助')
             }
+            'update' {
+                return @('[指令] cct update —— 更新 cct 到最新版', '',
+                    '用法: cct update', '',
+                    '说明: 查询 PowerShell Gallery 的最新版本并直接安装。',
+                    '      升级会装到新的版本目录，不影响当前已加载的会话；',
+                    '      安装完成后需重开终端（或先 Remove-Module ClaudeCodeTask）才生效。', '',
+                    '选项:', '  -h, --help   显示本命令帮助')
+            }
             default {
                 return @("未知命令: $Command，无法显示帮助", '', '用 cct -h 查看全局帮助。')
             }
@@ -317,6 +371,7 @@ function Get-CctHelpText {
         '  [指令] find    查找会话          cct find <过滤词>',
         '  [指令] run     定位并启动会话      cct run [选项] (-i <会话id> | <过滤词>)',
         '  [指令] clear   清理缓存或多余会话   cct clear [-cc] [选项]',
+        '  [指令] update  更新 cct 到最新版    cct update',
         '  [指令] help    显示帮助          cct help',
         '  [指令] version 显示版本          cct version', '',
         '选项:',
