@@ -1,7 +1,7 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "projectUri": "https://github.com/hjkl950217/ClaudeCodeTask",
   "licenseUri": "https://github.com/hjkl950217/ClaudeCodeTask/blob/main/LICENSE",
-  "releaseNotes": "0.5.0：同一个会话不再显示成两张卡。分组键和恢复目录改为「项目根」——从会话启动目录向上找最近的含 CLAUDE.md 或 AGENTS.md 的目录（两个文件名都认），找不到就沿用原目录。在子目录启动、会话中又切回上级的同一对话链会归到同一组，祖先与后代不再各出一张同名卡。选中卡片后先切到项目根再启动 claude，下次恢复不会又停在子级。缓存结构未变，无需清理。 | v0.5.0: one conversation no longer shows up as two cards. Grouping and the resume target now use the project root — the nearest directory containing CLAUDE.md or AGENTS.md, walking up from the session start directory (both filenames are accepted), falling back to the original directory when none is found. A conversation chain that started in a subdirectory and moved back up is grouped under the same project, so an ancestor and its descendant no longer produce two identically named cards. cct also changes to the project root before launching claude, so the next resume does not land in a subdirectory again. The cache format is unchanged.",
+  "releaseNotes": "0.6.0：命名会话现在是目录入口。只要给会话起过名字，哪怕只有一条消息也会出现在列表里；同名多段（比如 /clear 之后继续聊）合并成一张卡，卡片指向文件时间最新的那段。选中卡片后先切到该会话的启动目录，再执行配置里的启动命令，和你在目录下直接运行 claude-dc 效果一致。未命名的目录仍按原来的阈值逻辑出卡。缓存结构未变，无需清理。 | 0.6.0: named sessions are now the entry point for a directory. Once you have named a session, it shows up in the list even if it has only one message. Multiple segments sharing the same name (for example, after /clear) are merged into one card that points to the most recently written file. Selecting a card first changes to the session start directory, then runs the launch command from your config, exactly like running claude-dc in that directory. Directories without a named session keep the previous threshold behavior. The cache format is unchanged.",
   "buildProxy": "http://127.0.0.1:10193"
 }

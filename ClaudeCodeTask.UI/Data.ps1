@@ -54,6 +54,15 @@
 #     子级，首现 cwd 停在子目录 → 同一对话链的祖先与后代被拆成两组，各出一张同名卡
 #     （用户反馈 bug：cct 里同一会话显示为 2 个）。resume 目标同样落到项目根，避免下次
 #     恢复又停在子级。找不到锚点时回退 StartCwd，行为与旧版一致。
+# 第二十六轮重写（2026-11-06）：执行层改为「cd + 配置的启动命令」，聚合规则随之调整：
+#   - 自定义命名会话 = 目录入口：每个不同标题一张卡，不再受 MinUserMsgs 限制
+#     （用户规则：命名了就保留，哪怕只有一条消息）。旧「决策 34 修订：手动命名同样受阈值约束」作废。
+#   - 同名多段（/clear 派生）合并为一张，取文件最后写入时间（LastTimestamp）最新的那段。
+#     口径与 claude -c 一致——实测 -c 按 jsonl 的 mtime 选当前目录最近的会话。
+#   - 删除第十九轮分叉折叠与第二十二轮「会话名继承」：新规则下同名组天然只出一张卡。
+#   - 空壳命名段（0 条真实输入）不参与，避免 /clear 链尾顶替真实会话。
+#   - 完全未命名的目录保持旧逻辑：达标的 ai 标题里最新一张；否则目录升格。
+#   - 卡片新增 StartCwd：执行层 cd 到会话实际启动目录（claude -c 只认该目录的编码目录）。
 
 # 文件数拐点：达到该值且缓存可用才走增量路径（测试可覆盖该 script 变量）
 $script:CctCacheMinFiles = 20
@@ -306,94 +315,47 @@ function Get-CctTasks {
         $byTime = @($g.Group | Sort-Object LastTimestamp -Descending)
         $latest = $byTime[0]
 
-        # 会话项判定（spec 3.5）
-        $manualGroups = @($g.Group | Where-Object TitleType -eq 'userCustom' | Group-Object Title)
+        # 会话项判定（第二十六轮重写）：自定义命名会话 = 目录入口。
+        #   - 每个不同标题一张卡，不受 MinUserMsgs 限制（用户规则：命名了就保留，哪怕很短）。
+        #   - 同名多段（/clear 派生）合并为一张，取文件最后写入时间（LastTimestamp）最新的那段。
+        #     口径与 claude -c 一致：实测 -c 按 jsonl 的 mtime 选当前目录最近的会话。
+        #   - 分叉折叠与「会话名继承」在新规则下不再需要：同名组天然只出一张卡。
+        #   - 空壳段（0 条真实输入）不参与：/clear 链尾常留下只有标题没有对话的文件，
+        #     让它顶替会得到一张进去等于新开对话的卡。（有 1 条以上就保留，哪怕很短。）
+        $manualGroups = @($g.Group | Where-Object { $_.TitleType -eq 'userCustom' -and $_.HasRealUserMsg } | Group-Object Title)
         $sessionItems = [System.Collections.Generic.List[object]]::new()
         foreach ($mg in $manualGroups) {
-            # 决策 34 修订（2026-08-27）：手动命名同样受 ≥MinUserMsgs 阈值约束——
-            # <10 条的会话哪怕手动命名意义也不大。组内全部 <阈值 → 整组不保留。
-            # 同名组内达标的会话各自列为独立条目（≥10 的多条同名不再只留最新，
-            # 否则旧同名会话被静默隐藏、cct 进不去）；界面靠最近活动时间区分同名条目
-            $qualified = @($mg.Group | Where-Object { $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs } | Sort-Object LastTimestamp -Descending)
-            if ($qualified.Count -eq 0) { continue }   # 整组不保留（不再防御回退到 <阈值 文件）
-
-            # 第十九轮分叉折叠：同组内「祖先被本组合格后代声明」→ 祖先不单独列出。
-            # 判据：后代 jsonl 历史行携带蛇形 session_id 指向祖先（扫描器 V5 ancestors 列），
-            # 该字段只在续接分叉复制祖先历史时出现。只折叠同目录的祖先（血缘是目录内的对话链）。
-            $qualifiedIds = [System.Collections.Generic.HashSet[string]]::new()
-            foreach ($q in $qualified) { [void]$qualifiedIds.Add($q.SessionId) }
-            $supersededIds = [System.Collections.Generic.HashSet[string]]::new()
-            foreach ($q in $qualified) {
-                foreach ($a in $q.Ancestors) {
-                    if ($qualifiedIds.Contains($a) -and $a -ne $q.SessionId) { [void]$supersededIds.Add($a) }
-                }
-            }
-            foreach ($q in $qualified) {
-                if ($supersededIds.Contains($q.SessionId)) { continue }   # 被合格后代折叠，对话链只留最新端点
-                $sessionItems.Add([pscustomobject]@{
-                    Kind = 'Session'; Path = $q.ProjectRoot; Name = $mg.Name   # Path=项目根（resume 目标）
-                    Subtitle = $null
-                    LastActive = $q.LastTimestamp.ToLocalTime()
-                    SessionId = $q.SessionId
-                    GroupKey = $folderPath; TitleType = '自定义命名'   # GroupKey=项目根（挂到项目根文件夹下）
-                    ProjectDir = $q.ProjectDir                         # jsonl 所在编码目录（删除时定位用）
-                })
-            }
-        }
-
-        # 第二十二轮「会话名继承」：目录内只有一个命名名、且存在「真实输入时间更晚」的合格
-        # 未命名会话时，由该未命名会话顶替命名组出卡、沿用该名字（只改展示，不写 jsonl）。
-        # 根因：会话文件被打开一次就会刷新 mtime/末条 timestamp，用户进去看一眼再退出也会
-        # 让它永远排「最新」；真正在用的新会话往往没命名，旧逻辑下根本进不了列表。
-        # 触发条件刻意收紧，避免误伤：
-        #   ① 命名名唯一（多个名字 = 几个不相干任务，不合并）
-        #   ② 该命名名下有合格会话（否则交给既有「目录升格」兜底）
-        #   ③ 未命名会话里也有合格的，且最新那个的真实输入时间确实更晚
-        # 触发后该目录只出这一张卡；原命名会话不再单列（它的文件没被动过，用
-        # `cct run -i <会话id>` 仍可精准直达；若它重新被使用则真实输入时间变最新，卡片自动指回它）。
-        if ($manualGroups.Count -eq 1) {
-            $namedQualified = @($manualGroups[0].Group | Where-Object {
-                $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs -and $_.LastUserMsgTime })
-            $unnamedQualified = @($g.Group | Where-Object {
-                $_.TitleType -ne 'userCustom' -and $_.HasRealUserMsg -and $_.UserMsgs -ge $MinUserMsgs -and $_.LastUserMsgTime })
-            if ($namedQualified.Count -gt 0 -and $unnamedQualified.Count -gt 0) {
-                $namedLatest = ($namedQualified | Sort-Object LastUserMsgTime -Descending)[0]
-                $unnamedLatest = ($unnamedQualified | Sort-Object LastUserMsgTime -Descending)[0]
-                if ($unnamedLatest.LastUserMsgTime -gt $namedLatest.LastUserMsgTime) {
-                    $sessionItems.Clear()
-                    $sessionItems.Add([pscustomobject]@{
-                        Kind = 'Session'; Path = $unnamedLatest.ProjectRoot; Name = $manualGroups[0].Name
-                        Subtitle = $null
-                        LastActive = $unnamedLatest.LastTimestamp.ToLocalTime()
-                        SessionId = $unnamedLatest.SessionId
-                        GroupKey = $folderPath; TitleType = '自定义命名'
-                        ProjectDir = $unnamedLatest.ProjectDir
-                    })
-                }
-            }
+            $q = ($mg.Group | Sort-Object LastTimestamp -Descending)[0]
+            $sessionItems.Add([pscustomobject]@{
+                Kind = 'Session'; Path = $q.ProjectRoot; Name = $mg.Name
+                Subtitle = $null
+                LastActive = $q.LastTimestamp.ToLocalTime()
+                SessionId = $q.SessionId
+                StartCwd = $q.StartCwd                              # 执行层 cd 目标（claude -c 按启动目录找会话）
+                GroupKey = $folderPath; TitleType = '自定义命名'
+                ProjectDir = $q.ProjectDir                          # jsonl 所在编码目录（删除时定位用）
+            })
         }
 
         if ($manualGroups.Count -eq 0) {
-            # 保底自动项：目录无任何手动命名项（决策 36 原语义不变——手动项被阈值过滤不触发自动项顶替），
-            # ≥MinUserMsgs 的 ai-title 里最新一个（决策 35/37；口径与决策 32 一致：≥）
+            # 保底自动项：目录无任何手动命名项时，≥MinUserMsgs 的 ai-title 里最新一个（决策 35/37）
             $aiBig = @($g.Group | Where-Object { $_.TitleType -eq 'aiGenerate' -and $_.UserMsgs -ge $MinUserMsgs -and $_.HasRealUserMsg } | Sort-Object LastTimestamp -Descending)
             if ($aiBig.Count -gt 0) {
                 $sessionItems.Add([pscustomobject]@{
-                    Kind = 'Session'; Path = $aiBig[0].ProjectRoot; Name = $aiBig[0].Title   # Path=项目根（resume 目标）
+                    Kind = 'Session'; Path = $aiBig[0].ProjectRoot; Name = $aiBig[0].Title   # Path=项目根（分组/展示）
                     Subtitle = $null
                     LastActive = $aiBig[0].LastTimestamp.ToLocalTime()
                     SessionId = $aiBig[0].SessionId
+                    StartCwd = $aiBig[0].StartCwd
                     GroupKey = $folderPath; TitleType = '自动生成'
                     ProjectDir = $aiBig[0].ProjectDir
                 })
             }
         }
 
-        # 第十九轮目录升格：组内无任何会话项（手动组全 <阈值 或无手动项且无达标 ai 项）时，
-        # 把「有标题且 ≥1 条真实消息」的最新碎片升格为会话卡（豁免阈值）——碎片目录此前只剩
-        # folder 卡，副标题（标题）与进入后 `claude -c` 恢复会话的标题不一致（用户反馈 bug 2）；
-        # 升格后卡片标题 = 进入后标题，且用精确 --resume 而非 -c 猜测最新。folder 头被既有
-        # includeFolderFind 逻辑滤除（同组已有会话项）。
+        # 第十九轮目录升格：组内无任何会话项时，把「有标题且 ≥1 条真实消息」的最新碎片
+        # 升格为会话卡（豁免阈值）——碎片目录此前只剩 folder 卡，副标题（标题）与进入后
+        # 恢复的会话标题不一致（用户反馈 bug 2）。folder 头被既有 includeFolderFind 逻辑滤除。
         if ($sessionItems.Count -eq 0) {
             $promote = @($g.Group | Where-Object { $_.Title -and $_.HasRealUserMsg } | Sort-Object LastTimestamp -Descending)
             if ($promote.Count -gt 0) {
@@ -403,6 +365,7 @@ function Get-CctTasks {
                     Subtitle = $null
                     LastActive = $p.LastTimestamp.ToLocalTime()
                     SessionId = $p.SessionId
+                    StartCwd = $p.StartCwd
                     GroupKey = $folderPath; TitleType = if ($p.TitleType -eq 'userCustom') { '自定义命名' } else { '自动生成' }
                     ProjectDir = $p.ProjectDir
                 })
@@ -414,7 +377,7 @@ function Get-CctTasks {
             Kind = 'Folder'; Path = $folderPath; Name = $folderName
             Subtitle = $latest.Title
             LastActive = $latest.LastTimestamp.ToLocalTime()
-            SessionId = $null; GroupKey = $folderPath; TitleType = $null
+            SessionId = $null; StartCwd = $folderPath; GroupKey = $folderPath; TitleType = $null
             ProjectDir = $latest.ProjectDir
         }
         $items.Add($folderItem)

@@ -28,18 +28,26 @@ Describe 'Invoke-CctTask 三级降级链（反馈 3-1）' {
     BeforeEach {
         if (Test-Path $script:fakeDir) { Remove-Item -Recurse -Force $script:fakeDir }
     }
-    It 'L1 成功：直接返回，Started=true，命令含 sessionId' {
+    It '默认（交互式卡片）：L1 走 launchCommand，不带 sessionId' {
         $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
         $r = Invoke-CctTask $item $script:cfg
         $r.Started | Should -BeTrue
         $r.Interrupted | Should -BeNullOrEmpty
+        $log = Get-Content (Join-Path $script:fakeDir 'log.txt') -Raw
+        $log | Should -Match '-Mode:ok'
+        $log | Should -Not -Match 'resume:sid-1'
+    }
+    It '-Precise（cct run -i）：L1 走 resumeCommand，命令含 sessionId' {
+        $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
+        $r = Invoke-CctTask $item $script:cfg -Precise
+        $r.Started | Should -BeTrue
         $log = Get-Content (Join-Path $script:fakeDir 'log.txt') -Raw
         $log | Should -Match 'resume:sid-1'
     }
     It 'L1 失败 → L2 -c 成功：两次调用，第二次是 launchCommand' {
         $env:CCT_TEST_FAKE = 'fail,ok'
         $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
-        $r = Invoke-CctTask $item $script:cfg
+        $r = Invoke-CctTask $item $script:cfg -Precise
         $r.Started | Should -BeTrue
         $lines = @((Get-Content (Join-Path $script:fakeDir 'log.txt')) | Where-Object { $_ })
         $lines.Count | Should -Be 2
@@ -48,7 +56,7 @@ Describe 'Invoke-CctTask 三级降级链（反馈 3-1）' {
     It 'L1、L2 失败 → L3 带 prompt 成功：第三条命令带「继续」' {
         $env:CCT_TEST_FAKE = 'fail,fail,ok'
         $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
-        $r = Invoke-CctTask $item $script:cfg
+        $r = Invoke-CctTask $item $script:cfg -Precise
         $r.Started | Should -BeTrue
         $lines = @((Get-Content (Join-Path $script:fakeDir 'log.txt')) | Where-Object { $_ })
         $lines.Count | Should -Be 3
@@ -57,9 +65,18 @@ Describe 'Invoke-CctTask 三级降级链（反馈 3-1）' {
     It '三级全失败：Started=false，Command 是 L3 兜底命令' {
         $env:CCT_TEST_FAKE = 'fail,fail,fail'
         $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
-        $r = Invoke-CctTask $item $script:cfg
+        $r = Invoke-CctTask $item $script:cfg -Precise
         $r.Started | Should -BeFalse
         $r.Command | Should -Match '继续'
+    }
+    It '默认模式 L1 失败直接进 L3（不重复跑同一条 launchCommand）' {
+        $env:CCT_TEST_FAKE = 'fail,ok'
+        $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
+        $r = Invoke-CctTask $item $script:cfg
+        $r.Started | Should -BeTrue
+        $lines = @((Get-Content (Join-Path $script:fakeDir 'log.txt')) | Where-Object { $_ })
+        $lines.Count | Should -Be 2      # L1 失败 + L3 带 prompt，无重复的 L2
+        $lines[1] | Should -Match '继续'
     }
     It 'L1 被用户 Ctrl+C 中断（exit 130）：不降级静默返回' {
         $env:CCT_TEST_FAKE = 'interrupt'
@@ -72,7 +89,7 @@ Describe 'Invoke-CctTask 三级降级链（反馈 3-1）' {
     It 'L2 被中断：不继续降级' {
         $env:CCT_TEST_FAKE = 'fail,interrupt'
         $item = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='x'; SessionId='sid-1' }
-        $r = Invoke-CctTask $item $script:cfg
+        $r = Invoke-CctTask $item $script:cfg -Precise
         $r.Started | Should -BeTrue
         $r.Interrupted | Should -BeTrue
         (Get-Content (Join-Path $script:fakeDir 'count.txt') -Raw).Trim() | Should -Be '2'
@@ -166,13 +183,15 @@ Describe 'Invoke-CctClaude Start-Process 直启（第四轮根因修复：headle
 }
 
 Describe 'spinner 文本与命令拼装（反馈 3-2）' {
-    It '会话项 DryRun：Command 含 sessionId；文件夹项用 launchCommand' {
+    It '会话项 DryRun：默认 launchCommand；-Precise 含 sessionId' {
         $s = [pscustomobject]@{ Kind='Session'; Path=$script:tmp; Name='账号调优'; SessionId='s9' }
         $r = Invoke-CctTask $s $script:cfg -DryRun
-        $r.Command | Should -Match 'resume:s9'
+        $r.Command | Should -Match '-Mode ok'
+        $r2 = Invoke-CctTask $s $script:cfg -DryRun -Precise
+        $r2.Command | Should -Match 'resume:s9'
         $f = [pscustomobject]@{ Kind='Folder'; Path=$script:tmp; Name='dir'; SessionId=$null }
-        $r2 = Invoke-CctTask $f $script:cfg -DryRun
-        $r2.Command | Should -Match '-Mode ok'
+        $r3 = Invoke-CctTask $f $script:cfg -DryRun
+        $r3.Command | Should -Match '-Mode ok'
     }
     It 'Get-CctSpinnerText：会话项=标题（父目录），文件夹项=目录名' {
         $s = [pscustomobject]@{ Kind='Session'; Path='E:\t\管理_sub2api'; Name='账号调优'; SessionId='s1' }

@@ -152,6 +152,22 @@ function Invoke-CctFind {
     return Invoke-CctList -Tokens @($Tokens) -Root $Root -ConfigPath $ConfigPath -ExcludePatterns $ExcludePatterns
 }
 
+# 按会话 ID 直达扫描：聚合层会把同名多段（/clear 派生）合并成一张卡，被折叠的旧会话
+# 不在 Get-CctTasks 结果里。run -i 的 ID 是精准的，直接按文件名找 jsonl，绕过聚合。
+function Find-CctSessionById {
+    param([string]$Root, [string]$Id)
+    $file = Get-ChildItem -LiteralPath $Root -Recurse -Filter "$Id.jsonl" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $file) { return $null }
+    $r = Read-CctSessionFile $file.FullName
+    if (-not $r.StartCwd -or -not $r.Cwd -or -not $r.LastTimestamp) { return $null }
+    return [pscustomobject]@{
+        Kind = 'Session'; Path = $r.ProjectRoot; Name = $(if ($r.Title) { $r.Title } else { $Id })
+        Subtitle = $null; LastActive = $r.LastTimestamp.ToLocalTime()
+        SessionId = $Id; StartCwd = $r.StartCwd
+        GroupKey = $r.ProjectRoot; TitleType = $null; ProjectDir = $r.ProjectDir
+    }
+}
+
 # cct run (-i <会话id> | <过滤词>) [--dry-run]：定位并启动会话。
 # 优先走 -i 会话 ID 直达（精确匹配，任意词不冲突）；无 -i 时按过滤词定位。
 # 动词过滤唯一性判定（第十七轮细化）：只以「命中的 Session 项」判唯一（Filter 带出的父文件夹是上下文，
@@ -174,9 +190,10 @@ function Invoke-CctRun {
     if ($parsed.Options.ContainsKey('Id')) {
         $id = [string]$parsed.Options['Id']
         $hit = @($tasks | Where-Object { $_.Kind -eq 'Session' -and $_.SessionId -eq $id })
-        if ($hit.Count -eq 0) { throw "未找到会话 ID 为「$id」的会话（用 cct find -h / cct list --json 查看 ID）" }
         if ($hit.Count -gt 1) { throw "会话 ID「$id」命中了多个会话（数据异常，请联系排查）" }
-        return Invoke-CctTask -Item $hit[0] -Config $cfg -DryRun:$dryRun
+        $target = if ($hit.Count -eq 1) { $hit[0] } else { Find-CctSessionById -Root $Root -Id $id }
+        if ($null -eq $target) { throw "未找到会话 ID 为「$id」的会话（用 cct find -h / cct list --json 查看 ID）" }
+        return Invoke-CctTask -Item $target -Config $cfg -Precise -DryRun:$dryRun
     }
 
     # ── 分支 B：过滤词定位（无 -i）──
